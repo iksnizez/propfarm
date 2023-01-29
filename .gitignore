@@ -4,9 +4,10 @@
 .Ruserdata
 data/
 output/
-"props notes.txt"
+"props  notes.txt"
 scripts/scratch.R
+scripts/dbupdate.R
 scripts/Lfifteen.R
-scripts/propfarming_orignial.R
+scripts/propfarming_original.R
 scripts/bettingscrape.R
 scripts/.ipynb_checkpoints/
