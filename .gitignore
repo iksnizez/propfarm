@@ -1,0 +1,12 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+data/
+output/
+"props notes.txt"
+scripts/scratch.R
+scripts/Lfifteen.R
+scripts/propfarming_orignial.R
+scripts/bettingscrape.R
+scripts/.ipynb_checkpoints/
