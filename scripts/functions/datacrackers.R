@@ -116,14 +116,26 @@ opponent.stat.agg <- function(gid){
 #####
 
 ####################
+## FUNCTION TO CALC SYNTHETIC AVG
+####################
+synth.avg <- function(season_avg, n_avg, n_games, games_played){
+    # calculating the avg weights for the recent n games and season avg
+    n.avg.wt <- (min(1-(n_games / games_played), 0.6))
+    season.avg.wt <- (1 - n.avg.wt)
+    # calculating the wt. synthetic avg
+    sythetic.avg <- (n_avg * n.avg.wt) + (season_avg * season.avg.wt)
+    
+    return(sythetic.avg)
+}
+#####
+
+####################
 ## FUNCTION TO CALCULATE PROPFARM PLAYER STATS FROM NBA BOX
 ####################
 # filtering entire season box score to only the teams playing today
 propfarming <- function(box.score.data, team.ids, matchups.today){
     # ingest season boxscore data from load_nba_player_box and vector of team ids and dataframe of home/away teams
     # output filtered list of players and their prop farm stat data for today
-    
-    
     players.today <- box.score.data %>% 
         filter(team_id %in% team.ids) %>% 
         arrange(team_id, athlete_id, desc(game_date))
@@ -149,30 +161,46 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
     players.today$fta <-  as.numeric(as.character(players.today$fta))
     players.today$to <-  as.numeric(as.character(players.today$to))
     players.today$pf <-  as.numeric(as.character(players.today$pf))
+    players.today$pra <- players.today$pts + players.today$ast + players.today$reb
+    players.today$pr <- players.today$pts + players.today$reb
+    players.today$pa <- players.today$pts + players.today$ast
+    players.today$ra <- players.today$ast + players.today$reb
+    players.today$sb <- players.today$stl + players.today$blk
     
     # calculating player season averages and standard dev
     players.today.season.avgs <- players.today %>%
-        select(athlete_id,min, pts, reb, ast, stl, blk, fg3m) %>%
+        select(athlete_id,min, pts, reb, ast, stl, blk, fg3m, pra, pr, pa, ra, sb) %>%
         group_by(athlete_id) %>%
-        summarize(minAvg = mean(min, na.rm=TRUE),
+        summarize(gp = n(),
+                  minAvg = mean(min, na.rm=TRUE),
                   ptsAvg = mean(pts, na.rm=TRUE),
                   rebAvg = mean(reb, na.rm=TRUE),
                   astAvg = mean(ast, na.rm=TRUE),
                   stlAvg = mean(stl, na.rm=TRUE),
                   blkAvg = mean(blk, na.rm=TRUE),
                   fg3mAvg = mean(fg3m, na.rm=TRUE),
+                  praAvg = mean(pra, na.rm=TRUE),
+                  prAvg = mean(pr, na.rm=TRUE),
+                  paAvg = mean(pa, na.rm=TRUE),
+                  raAvg = mean(ra, na.rm=TRUE),
+                  sbAvg = mean(sb, na.rm=TRUE),
                   minstd = sd(min, na.rm=TRUE),
                   ptsStd = sd(pts, na.rm=TRUE),
                   rebStd = sd(reb, na.rm=TRUE),
                   astStd = sd(ast, na.rm=TRUE),
                   stlStd = sd(stl, na.rm=TRUE),
                   blkStd = sd(blk, na.rm=TRUE),
-                  fg3mStd = sd(fg3m, na.rm=TRUE)
+                  fg3mStd = sd(fg3m, na.rm=TRUE),
+                  praStd = sd(pra, na.rm=TRUE),
+                  prStd = sd(pr, na.rm=TRUE),
+                  paStd = sd(pa, na.rm=TRUE),
+                  raStd = sd(ra, na.rm=TRUE),
+                  sbStd = sd(sb, na.rm=TRUE)
         )
     
     # adding the 3 game averages and standard deviations
     players.today.l3.avgs <- players.today %>%
-        select(athlete_id,min, pts, reb, ast, stl, blk, fg3m) %>%
+        select(athlete_id,min, pts, reb, ast, stl, blk, fg3m, pra, pr, pa, ra, sb) %>%
         group_by(athlete_id) %>%
         filter(row_number()<=3) %>%
         summarize(minAvgL3 = mean(min, na.rm=TRUE),
@@ -182,32 +210,52 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
                   stlAvgL3 = mean(stl, na.rm=TRUE),
                   blkAvgL3 = mean(blk, na.rm=TRUE),
                   fg3mAvgL3 = mean(fg3m, na.rm=TRUE),
-                  minAvgL3 = mean(min, na.rm=TRUE),
+                  praAvgL3 = mean(pra, na.rm=TRUE),
+                  prAvgL3 = mean(pr, na.rm=TRUE),
+                  paAvgL3 = mean(pa, na.rm=TRUE),
+                  raAvgL3 = mean(ra, na.rm=TRUE),
+                  sbAvgL3 = mean(sb, na.rm=TRUE),
+                  minStdL3 = sd(min, na.rm=TRUE),
                   ptsStdL3 = sd(pts, na.rm=TRUE),
                   rebStdL3 = sd(reb, na.rm=TRUE),
                   astStdL3 = sd(ast, na.rm=TRUE),
                   stlStdL3 = sd(stl, na.rm=TRUE),
                   blkStdL3 = sd(blk, na.rm=TRUE),
-                  fg3mStdL3 = sd(fg3m, na.rm=TRUE)
+                  fg3mStdL3 = sd(fg3m, na.rm=TRUE),
+                  praStdL3 = sd(pra, na.rm=TRUE),
+                  prStdL3 = sd(pr, na.rm=TRUE),
+                  paStdL3 = sd(pa, na.rm=TRUE),
+                  raStdL3 = sd(ra, na.rm=TRUE),
+                  sbStdL3 = sd(sb, na.rm=TRUE)
         )
     
     # adding last 3  Standard dev ranges.
-    players.today.l3.avgs$ptsL3Upper = players.today.l3.avgs$ptsAvgL3 + players.today.l3.avgs$ptsStdL3
-    players.today.l3.avgs$ptsL3Lower = players.today.l3.avgs$ptsAvgL3 - players.today.l3.avgs$ptsStdL3
-    players.today.l3.avgs$rebL3Upper = players.today.l3.avgs$rebAvgL3 + players.today.l3.avgs$rebStdL3
-    players.today.l3.avgs$rebL3Lower = players.today.l3.avgs$rebAvgL3 - players.today.l3.avgs$rebStdL3
-    players.today.l3.avgs$astL3Upper = players.today.l3.avgs$astAvgL3 + players.today.l3.avgs$astStdL3
-    players.today.l3.avgs$astL3Lower = players.today.l3.avgs$astAvgL3 - players.today.l3.avgs$astStdL3
-    players.today.l3.avgs$stlL3Upper = players.today.l3.avgs$stlAvgL3 + players.today.l3.avgs$stlStdL3
-    players.today.l3.avgs$stlL3Lower = players.today.l3.avgs$stlAvgL3 - players.today.l3.avgs$stlStdL3
-    players.today.l3.avgs$blkL3Upper = players.today.l3.avgs$blkAvgL3 + players.today.l3.avgs$blkStdL3
-    players.today.l3.avgs$blkL3Lower = players.today.l3.avgs$blkAvgL3 - players.today.l3.avgs$blkStdL3
-    players.today.l3.avgs$fg3mL3Upper = players.today.l3.avgs$fg3mAvgL3 + players.today.l3.avgs$fg3mStdL3
-    players.today.l3.avgs$fg3mL3Lower = players.today.l3.avgs$fg3mAvgL3 - players.today.l3.avgs$fg3mStdL3
+    #players.today.l3.avgs$ptsL3Upper = players.today.l3.avgs$ptsAvgL3 + players.today.l3.avgs$ptsStdL3
+    #players.today.l3.avgs$ptsL3Lower = players.today.l3.avgs$ptsAvgL3 - players.today.l3.avgs$ptsStdL3
+    #players.today.l3.avgs$rebL3Upper = players.today.l3.avgs$rebAvgL3 + players.today.l3.avgs$rebStdL3
+    #players.today.l3.avgs$rebL3Lower = players.today.l3.avgs$rebAvgL3 - players.today.l3.avgs$rebStdL3
+    #players.today.l3.avgs$astL3Upper = players.today.l3.avgs$astAvgL3 + players.today.l3.avgs$astStdL3
+    #players.today.l3.avgs$astL3Lower = players.today.l3.avgs$astAvgL3 - players.today.l3.avgs$astStdL3
+    #players.today.l3.avgs$stlL3Upper = players.today.l3.avgs$stlAvgL3 + players.today.l3.avgs$stlStdL3
+    #players.today.l3.avgs$stlL3Lower = players.today.l3.avgs$stlAvgL3 - players.today.l3.avgs$stlStdL3
+    #players.today.l3.avgs$blkL3Upper = players.today.l3.avgs$blkAvgL3 + players.today.l3.avgs$blkStdL3
+    #players.today.l3.avgs$blkL3Lower = players.today.l3.avgs$blkAvgL3 - players.today.l3.avgs$blkStdL3
+    #players.today.l3.avgs$fg3mL3Upper = players.today.l3.avgs$fg3mAvgL3 + players.today.l3.avgs$fg3mStdL3
+    #players.today.l3.avgs$fg3mL3Lower = players.today.l3.avgs$fg3mAvgL3 - players.today.l3.avgs$fg3mStdL3
+    #players.today.l3.avgs$praL3Upper = players.today.l3.avgs$praAvgL3 + players.today.l3.avgs$praStdL3
+    #players.today.l3.avgs$praL3Lower = players.today.l3.avgs$praAvgL3 - players.today.l3.avgs$praStdL3
+    #players.today.l3.avgs$prL3Upper = players.today.l3.avgs$prAvgL3 + players.today.l3.avgs$prStdL3
+    #players.today.l3.avgs$prL3Lower = players.today.l3.avgs$prAvgL3 - players.today.l3.avgs$prStdL3
+    #players.today.l3.avgs$paL3Upper = players.today.l3.avgs$paAvgL3 + players.today.l3.avgs$paStdL3
+    #players.today.l3.avgs$paL3Lower = players.today.l3.avgs$paAvgL3 - players.today.l3.avgs$paStdL3
+    #players.today.l3.avgs$raL3Upper = players.today.l3.avgs$raAvgL3 + players.today.l3.avgs$raStdL3
+    #players.today.l3.avgs$raL3Lower = players.today.l3.avgs$raAvgL3 - players.today.l3.avgs$raStdL3
+    #players.today.l3.avgs$sbL3Upper = players.today.l3.avgs$sbAvgL3 + players.today.l3.avgs$sbStdL3
+    #players.today.l3.avgs$sbL3Lower = players.today.l3.avgs$sbAvgL3 - players.today.l3.avgs$sbStdL3
     
     # adding the 10 game averages and standard deviations
     players.today.l10.avgs <- players.today %>%
-        select(athlete_id,min, pts, reb, ast, stl, blk, fg3m) %>%
+        select(athlete_id,min, pts, reb, ast, stl, blk, fg3m, pra, pr, pa, ra, sb) %>%
         group_by(athlete_id) %>%
         filter(row_number()<=10) %>%
         summarize(minAvgL10 = mean(min, na.rm=TRUE),
@@ -217,28 +265,48 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
                   stlAvgL10 = mean(stl, na.rm=TRUE),
                   blkAvgL10 = mean(blk, na.rm=TRUE),
                   fg3mAvgL10 = mean(fg3m, na.rm=TRUE),
+                  praAvgL10 = mean(pra, na.rm=TRUE),
+                  prAvgL10 = mean(pr, na.rm=TRUE),
+                  paAvgL10 = mean(pa, na.rm=TRUE),
+                  raAvgL10 = mean(ra, na.rm=TRUE),
+                  sbAvgL10 = mean(sb, na.rm=TRUE),
                   minStdL10 = sd(min, na.rm=TRUE),
                   ptsStdL10 = sd(pts, na.rm=TRUE),
                   rebStdL10 = sd(reb, na.rm=TRUE),
                   astStdL10 = sd(ast, na.rm=TRUE),
                   stlStdL10 = sd(stl, na.rm=TRUE),
                   blkStdL10 = sd(blk, na.rm=TRUE),
-                  fg3mStdL10 = sd(fg3m, na.rm=TRUE)
+                  fg3mStdL10 = sd(fg3m, na.rm=TRUE),
+                  praStdL10 = sd(pra, na.rm=TRUE),
+                  prStdL10 = sd(pr, na.rm=TRUE),
+                  paStdL10 = sd(pa, na.rm=TRUE),
+                  raStdL10 = sd(ra, na.rm=TRUE),
+                  sbStdL10 = sd(sb, na.rm=TRUE)
         )
     
     # adding last 10 Standard dev ranges.
-    players.today.l10.avgs$ptsL10Upper = players.today.l10.avgs$ptsAvgL10 + players.today.l10.avgs$ptsStdL10
-    players.today.l10.avgs$ptsL10Lower = players.today.l10.avgs$ptsAvgL10 - players.today.l10.avgs$ptsStdL10
-    players.today.l10.avgs$rebL10Upper = players.today.l10.avgs$rebAvgL10 + players.today.l10.avgs$rebStdL10
-    players.today.l10.avgs$rebL10Lower = players.today.l10.avgs$rebAvgL10 - players.today.l10.avgs$rebStdL10
-    players.today.l10.avgs$astL10Upper = players.today.l10.avgs$astAvgL10 + players.today.l10.avgs$astStdL10
-    players.today.l10.avgs$astL10Lower = players.today.l10.avgs$astAvgL10 - players.today.l10.avgs$astStdL10
-    players.today.l10.avgs$stlL10Upper = players.today.l10.avgs$stlAvgL10 + players.today.l10.avgs$stlStdL10
-    players.today.l10.avgs$stlL10Lower = players.today.l10.avgs$stlAvgL10 - players.today.l10.avgs$stlStdL10
-    players.today.l10.avgs$blkL10Upper = players.today.l10.avgs$blkAvgL10 + players.today.l10.avgs$blkStdL10
-    players.today.l10.avgs$blkL10Lower = players.today.l10.avgs$blkAvgL10 - players.today.l10.avgs$blkStdL10
-    players.today.l10.avgs$fg3mL10Upper = players.today.l10.avgs$fg3mAvgL10 + players.today.l10.avgs$fg3mStdL10
-    players.today.l10.avgs$fg3mL10Lower = players.today.l10.avgs$fg3mAvgL10 - players.today.l10.avgs$fg3mStdL10
+    #players.today.l10.avgs$ptsL10Upper = players.today.l10.avgs$ptsAvgL10 + players.today.l10.avgs$ptsStdL10
+    #players.today.l10.avgs$ptsL10Lower = players.today.l10.avgs$ptsAvgL10 - players.today.l10.avgs$ptsStdL10
+    #players.today.l10.avgs$rebL10Upper = players.today.l10.avgs$rebAvgL10 + players.today.l10.avgs$rebStdL10
+    #players.today.l10.avgs$rebL10Lower = players.today.l10.avgs$rebAvgL10 - players.today.l10.avgs$rebStdL10
+    #players.today.l10.avgs$astL10Upper = players.today.l10.avgs$astAvgL10 + players.today.l10.avgs$astStdL10
+    #players.today.l10.avgs$astL10Lower = players.today.l10.avgs$astAvgL10 - players.today.l10.avgs$astStdL10
+    #players.today.l10.avgs$stlL10Upper = players.today.l10.avgs$stlAvgL10 + players.today.l10.avgs$stlStdL10
+    #players.today.l10.avgs$stlL10Lower = players.today.l10.avgs$stlAvgL10 - players.today.l10.avgs$stlStdL10
+    #players.today.l10.avgs$blkL10Upper = players.today.l10.avgs$blkAvgL10 + players.today.l10.avgs$blkStdL10
+    #players.today.l10.avgs$blkL10Lower = players.today.l10.avgs$blkAvgL10 - players.today.l10.avgs$blkStdL10
+    #players.today.l10.avgs$fg3mL10Upper = players.today.l10.avgs$fg3mAvgL10 + players.today.l10.avgs$fg3mStdL10
+    #players.today.l10.avgs$fg3mL10Lower = players.today.l10.avgs$fg3mAvgL10 - players.today.l10.avgs$fg3mStdL10
+    #players.today.l10.avgs$praL10Upper = players.today.l10.avgs$praAvgL10 + players.today.l10.avgs$praStdL10
+    #players.today.l10.avgs$praL10Lower = players.today.l10.avgs$praAvgL10 - players.today.l10.avgs$praStdL10
+    #players.today.l10.avgs$prL10Upper = players.today.l10.avgs$prAvgL10 + players.today.l10.avgs$prStdL10
+    #players.today.l10.avgs$prL10Lower = players.today.l10.avgs$prAvgL10 - players.today.l10.avgs$prStdL10
+    #players.today.l10.avgs$paL10Upper = players.today.l10.avgs$paAvgL10 + players.today.l10.avgs$paStdL10
+    #players.today.l10.avgs$paL10Lower = players.today.l10.avgs$paAvgL10 - players.today.l10.avgs$paStdL10
+    #players.today.l10.avgs$raL10Upper = players.today.l10.avgs$raAvgL10 + players.today.l10.avgs$raStdL10
+    #players.today.l10.avgs$raL10Lower = players.today.l10.avgs$raAvgL10 - players.today.l10.avgs$raStdL10
+    #players.today.l10.avgs$sbL10Upper = players.today.l10.avgs$sbAvgL10 + players.today.l10.avgs$sbStdL10
+    #players.today.l10.avgs$sbL10Lower = players.today.l10.avgs$sbAvgL10 - players.today.l10.avgs$sbStdL10
     
     #merging the season avg data with the last 3 avg data and last 10 avg
     df <- merge(players.today.season.avgs, players.today.l3.avgs, by = "athlete_id")
@@ -254,8 +322,8 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
     
     # filtering data to players with >=21 avg. minutes in the last 10 games
     # adding:
-    #back-to-back flag 
-    #opponent
+        #back-to-back flag 
+        #opponent
     df <- df %>%
         filter(minAvgL10 >= 21) %>%
         rowwise() %>%
@@ -268,14 +336,9 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
                      (matchups.today %>% filter(away_team_abb == team_abbreviation) %>% select(home_team_abb))[[1]]
         )
         )
-
+    
     return(df)    
 }
-
-
-    
-    
-
 
 #####
 
@@ -411,8 +474,3 @@ last.n.games <- function(n, season){
 
 
 
-####################
-##
-####################
-
-#####

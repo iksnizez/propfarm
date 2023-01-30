@@ -5,10 +5,12 @@ library(jsonlite)
 library(dplyr)
 library(tidyr)
 library(stringr)
-library(rvest) 
+library(rvest) # html scraping
 library(zoo) # rolling averages
+#RETICULATE_PYTHON="../propfarmVenv/Scripts/python"
+#library(reticulate) # running python script to get the odds scrape
 source("scripts/functions/datacrackers.R")
-source("scripts/bettingscrape.R")
+
 
 # static parameters used throughout the script
 season = "2022-23"
@@ -134,7 +136,7 @@ matchups.today <- games.today %>% select(home_team_abb, away_team_abb)
 # retrieving the player boxscore for the season, 
 # this will be used to access players that are playing today and agg stats
 boxscore.player <- hoopR::load_nba_player_box(s) 
-harvest <- propfarming(boxscore.player, team.id.today, matchups.today)
+harvest <- propfarming(boxscore.player, team.id.today, matchups.today, 3)
 harvest$date <- search.date
 ### paste back location if errors with  propfarming function
 #####
@@ -142,17 +144,66 @@ harvest$date <- search.date
 ##################
 # scrape odds data
 ##################
-#filename <- paste("/data/", today.date.char, "bettingData.csv", sep = "")
-#betting.table <- harvest.odds(TRUE, filename)
-####### this will be replaced with ^^^^ when live
-#betting.table <- read.csv("data/sampleOddsdata2.csv")
-####
+betting.table <- read.csv("data/2023-01-29_odds.csv") %>%
+                    pivot_wider(names_from = stat,
+                                values_from = c(line, oOdds, uOdds))
+
+
 # store the players from the harvest data that did not have any betting info
-#missing.players <- setdiff(harvest$athlete_display_name, betting.table$PLAYER)
-#harvest <- merge(harvest, betting.table, 
-#                 by.x = "athlete_display_name",
-#                 by.y = "PLAYER"
-#                 )
+missing.players <- setdiff(harvest$athlete_display_name, betting.table$PLAYER)
+harvest <- merge(harvest, betting.table, 
+                 by.x = "athlete_display_name",
+                 by.y = "PLAYER"
+                 )
+
+#####
+
+##################
+# calculating line score - actual line vs avg calcs
+##################
+# creating the synthetic avg used for prop score
+n.games <- 3
+harvest <- harvest %>%
+    rowwise %>%
+    mutate(
+        ptsAvgSynth = synth.avg(ptsAvg, ptsAvgL3, n.games, gp),
+        rebAvgSynth = synth.avg(rebAvg, rebAvgL3, n.games, gp),
+        astAvgSynth = synth.avg(astAvg, astAvgL3, n.games, gp),
+        stlAvgSynth = synth.avg(stlAvg, stlAvgL3, n.games, gp),
+        blkAvgSynth = synth.avg(blkAvg, blkAvgL3, n.games, gp),
+        fg3mAvgSynth = synth.avg(fg3mAvg, fg3mAvgL3, n.games, gp),
+        praAvgSynth = synth.avg(praAvg, praAvgL3, n.games, gp),
+        prAvgSynth = synth.avg(prAvg, prAvgL3, n.games, gp),
+        paAvgSynth = synth.avg(paAvg, paAvgL3, n.games, gp),
+        raAvgSynth = synth.avg(raAvg, raAvgL3, n.games, gp),
+        sbAvgSynth = synth.avg(sbAvg, sbAvgL3, n.games, gp)
+    ) %>%
+    mutate(
+        ptsOSynth = ptsAvgSynth + ptsStdL3,
+        ptsUSynth = ptsAvgSynth - ptsStdL3,
+        rebOSynth = rebAvgSynth + rebStdL3,
+        rebUSynth = rebAvgSynth - rebStdL3,
+        astOSynth = astAvgSynth + astStdL3,
+        astUSynth = astAvgSynth - astStdL3,
+        stlOSynth = stlAvgSynth + stlStdL3,
+        stlUSynth = stlAvgSynth - stlStdL3,
+        blkOSynth = blkAvgSynth + blkStdL3,
+        blkUSynth = blkAvgSynth - blkStdL3,
+        fg3mOSynth = fg3mAvgSynth + fg3mStdL3,
+        fg3mUSynth = fg3mAvgSynth - fg3mStdL3,
+        praOSynth = praAvgSynth + praStdL3,
+        praUSynth = praAvgSynth - praStdL3,
+        prOSynth = prAvgSynth + prStdL3,
+        prUSynth = prAvgSynth - prStdL3,
+        paOSynth = paAvgSynth + paStdL3,
+        paUSynth = paAvgSynth - paStdL3,
+        raOSynth = raAvgSynth + raStdL3,
+        raUSynth = raAvgSynth - raStdL3,
+        sbOSynth = sbAvgSynth + sbStdL3,
+        sbUSynth = sbAvgSynth - sbStdL3
+    )
+
+View(harvest)
 #####
 
 ##################
@@ -167,7 +218,7 @@ View(lasts %>% select(opp, contains("Rank")))
 ##################
 gids.today
 stats <- espn_nba_player_box(gids.today[1])
-harvest$actPts <- 
+#harvest$actPts <- 
 #harvest$actReb <- 
 #harvest$actAst <- 
 #harvest$actStl <- 
