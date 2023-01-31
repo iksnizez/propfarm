@@ -202,6 +202,10 @@ harvest <- harvest %>%
         sbOSynth = sbAvgSynth + sbStdL3,
         sbUSynth = sbAvgSynth - sbStdL3
     )
+#####
+####NEED TO CHECK SYNTH CALC + OVER AND UNDER AVG 
+####  NEED TO CALC OVER AND UNDER SCORES AGAINST LINE DATA
+
 
 View(harvest)
 #####
