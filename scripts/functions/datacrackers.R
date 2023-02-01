@@ -471,6 +471,74 @@ last.n.games <- function(n, season){
 
 #####
 
+####################
+## Split shot attempts in player box scores
+####################
+box.score.split <- function(box.scores){
+    ## ingest player boxscores
+    ## returns shot attemps split into sep. columns
+    
+    split.box <- box.scores %>% 
+        tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
+        tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
+        tidyr::separate(ft, sep = "-", into = c("ftm","fta")) %>%  
+    
+    return(split.box)
+
+}
+#####
+
+####################
+## Split shot attempts and avg stats from  game box scores for single player
+####################
+player.box.score.avgs <- function(box.scores, game.ids, player){
+    ## ingest a either a data frame of specific games, or full season boxes + vector of 
+    ## gids to filter the boxes and a player name
+    ## returns 2 dataframes the avgs for the player from the games and the boxscores
+    
+    player <- tolower(player)
+    
+    #handles if the season box is passed along with game ids. filters to games and player
+    if(length(game.ids) > 0 & length(player) > 0){
+        box.scores <- box.scores %>% 
+            mutate(athlete_display_name = tolower(athlete_display_name)) %>% 
+            filter(game_id %in% game.ids & athlete_display_name == player)
+        
+    }
+    #filters box scores already filtered for games but not player
+    else if(length(player) > 0){
+        box.scores <- box.scores %>% 
+            mutate(athlete_display_name = tolower(athlete_display_name)) %>%
+            filter(athlete_display_name == player)
+    }
+    
+    box.scores <- box.score.split(box.scores)
+        
+    avgs <- box.scores %>% 
+        group_by(athlete_display_name) %>%
+        summarize(gp = n(),
+                  minAvg = mean(as.numeric(min), na.rm = TRUE),
+                  fgmAvg = mean(as.numeric(fgm), na.rm = TRUE),
+                  fgaAvg = mean(as.numeric(fga), na.rm = TRUE),
+                  fg3mAvg = mean(as.numeric(fg3m), na.rm = TRUE),
+                  fg3aAvg = mean(as.numeric(fg3a), na.rm = TRUE),
+                  ftmAvg = mean(as.numeric(ftm), na.rm = TRUE),
+                  ftaAvg = mean(as.numeric(fta), na.rm = TRUE),
+                  orebAvg = mean(as.numeric(oreb), na.rm = TRUE),
+                  dreb = mean(as.numeric(dreb), na.rm = TRUE),
+                  rebAvg = mean(as.numeric(reb), na.rm = TRUE),
+                  astAvg = mean(as.numeric(ast), na.rm = TRUE),
+                  stlAvg = mean(as.numeric(stl), na.rm = TRUE),
+                  blkAvg = mean(as.numeric(blk), na.rm = TRUE),
+                  toAvg = mean(as.numeric(to), na.rm = TRUE),
+                  ptsAvg = mean(as.numeric(pts), na.rm = TRUE)
+        )
+    
+    
+    return(list(box.scores, avgs))
+
+}
+#####
 
 ###############
 # retrieving a player's missed games and calculating player avg for those games
@@ -533,103 +601,19 @@ player.missed.games.stats <- function(team_abb, missed_player_names, stats_playe
         return("player missed no games")
     }
     else{
-        # storing the first game in the list for loop navigation
-        first.game <- missed.games[1]
-        
-        # looping through missed games to agg stats for the player of interest
-        for(g in missed.games){
-            # create the main data frame on the first loop that will receiving additional game data
-            if(g == first.game){
-                box.games <- hoopR::espn_nba_player_box(g) %>%
-                    mutate(athlete_display_name = tolower(athlete_display_name)) %>%
-                    filter(athlete_display_name == stats_player_name)
-            }
-            else{
-                # create temp data frame appended to the main for every new game after the first
-                temp.game <- hoopR::espn_nba_player_box(g) %>%
-                    mutate(athlete_display_name = tolower(athlete_display_name)) %>%
-                    filter(athlete_display_name == stats_player_name)
-                
-                box.games <- rbind(box.games, temp.game)
-            }
-        }
-        
-        avg <- box.games %>% 
-            tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
-            tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
-            tidyr::separate(ft, sep = "-", into = c("ftm","fta")) %>%  
-            group_by(athlete_display_name) %>%
-            summarize(
-                minAvg = mean(as.numeric(min), na.rm = TRUE),
-                fgmAvg = mean(as.numeric(fgm), na.rm = TRUE),
-                fgaAvg = mean(as.numeric(fga), na.rm = TRUE),
-                fg3mAvg = mean(as.numeric(fg3m), na.rm = TRUE),
-                fg3aAvg = mean(as.numeric(fg3a), na.rm = TRUE),
-                ftmAvg = mean(as.numeric(ftm), na.rm = TRUE),
-                ftaAvg = mean(as.numeric(fta), na.rm = TRUE),
-                orebAvg = mean(as.numeric(oreb), na.rm = TRUE),
-                dreb = mean(as.numeric(dreb), na.rm = TRUE),
-                rebAvg = mean(as.numeric(reb), na.rm = TRUE),
-                astAvg = mean(as.numeric(ast), na.rm = TRUE),
-                stlAvg = mean(as.numeric(stl), na.rm = TRUE),
-                blkAvg = mean(as.numeric(blk), na.rm = TRUE),
-                toAvg = mean(as.numeric(to), na.rm = TRUE),
-                ptsAvg = mean(as.numeric(pts), na.rm = TRUE)
-            )
-        
-        #####  LOOP TO REMOVE IF CHANGING TO FULL SEASON AVG #######
-        # storing the first game in the list for loop navigation
-        first.game.2 <- games.played[1]
-        
-        # looping through missed games to agg stats for the player of interest
-        for(g in games.played){
-            # create the main data frame on the first loop that will receiving additional game data
-            if(g == first.game.2){
-                season.avgs <- hoopR::espn_nba_player_box(g) %>%
-                    mutate(athlete_display_name = tolower(athlete_display_name)) %>%
-                    filter(athlete_display_name == stats_player_name)
-            }
-            else{
-                # create temp data frame appended to the main for every new game after the first
-                temp.game <- hoopR::espn_nba_player_box(g) %>%
-                    mutate(athlete_display_name = tolower(athlete_display_name)) %>%
-                    filter(athlete_display_name == stats_player_name)
-                
-                season.avgs <- rbind(season.avgs, temp.game)
-            }
-        }        
-        
+
+        #player avgs after filtering for games and POI
+        missing <- player.box.score.avgs(box.scores, missed.games, stats_player_name)
+        avgs.missing <- missing[[2]]
+        box.games.missed <- missing[[1]]
         
         # gathering the stat players season avgs
-        #season.avgs <- box.scores %>%   ###### UNCOMMENT THIS LINE AND REMOVE LOOP RIGHT ABOVE IF YOU WANT AVG DIFF TO BE CALCULATED ON SEASONS STATS AND NOT ONLY WHEN MISSING PLAYERS ACTIVE STATS
-        season.avgs <- season.avgs %>%
-            mutate(athlete_display_name = tolower(athlete_display_name)) %>%
-            filter(athlete_display_name == stats_player_name) %>%
-            tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
-            tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
-            tidyr::separate(ft, sep = "-", into = c("ftm","fta")) %>%  
-            group_by(athlete_display_name) %>%
-            summarize(
-                minAvg = mean(as.numeric(min), na.rm = TRUE),
-                fgmAvg = mean(as.numeric(fgm), na.rm = TRUE),
-                fgaAvg = mean(as.numeric(fga), na.rm = TRUE),
-                fg3mAvg = mean(as.numeric(fg3m), na.rm = TRUE),
-                fg3aAvg = mean(as.numeric(fg3a), na.rm = TRUE),
-                ftmAvg = mean(as.numeric(ftm), na.rm = TRUE),
-                ftaAvg = mean(as.numeric(fta), na.rm = TRUE),
-                orebAvg = mean(as.numeric(oreb), na.rm = TRUE),
-                dreb = mean(as.numeric(dreb), na.rm = TRUE),
-                rebAvg = mean(as.numeric(reb), na.rm = TRUE),
-                astAvg = mean(as.numeric(ast), na.rm = TRUE),
-                stlAvg = mean(as.numeric(stl), na.rm = TRUE),
-                blkAvg = mean(as.numeric(blk), na.rm = TRUE),
-                toAvg = mean(as.numeric(to), na.rm = TRUE),
-                ptsAvg = mean(as.numeric(pts), na.rm = TRUE)
-            )
+        active <- player.box.score.avgs(box.scores, games.played, stats_player_name)
+        avgs.active <- active[[2]]
+        box.games.active <- active[[1]]
         
-
         # combining the avg when players are missing and full season
-        avg.change <- rbind(avg, season.avgs)
+        avg.change <- rbind(avgs.missing, avgs.active)
         
         #caclulting the difference between the 2 avgs
         avg.change <- data.frame(avg.change[1,-1] - avg.change[2,-1])
@@ -637,9 +621,15 @@ player.missed.games.stats <- function(team_abb, missed_player_names, stats_playe
         
     }
     
-    # game ids for the missed games, box scores for the POI when other players missed
-    # POI avgs in those games, the difference in avg for POI when players missing vs when they are active
-    return(list(missed.games, box.games, avg, avg.change))
+    # function returns the 1)list of missed game ids for requested players
+    # 2)boxscores from missed games for POI, 3) avgs from missed games for POI
+    # 4) box scores from games missing players active, 5) avgs for active
+    # games for POI, 6) different in missing/active avgs
+    return(list(missed.games, 
+                box.games.missed, avgs.missing, 
+                box.games.active, avgs.active, 
+                avg.change))
 }
+
 #####
 
