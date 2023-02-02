@@ -1,6 +1,39 @@
 library(hoopR)
 library(dplyr)
 library(tidyr)
+
+####################
+## FUNCTION TO UPDATE PROVIDED TEAM DATA
+####################
+update.default.team.data <- function(){
+    # data to join with default data frame
+    TeamID <- c("1610612741", "1610612744", "1610612766", "1610612762", "1610612750", "1610612749", "1610612752","1610612743", "1610612764", "1610612763", "1610612737", "1610612757", "1610612742", "1610612755", "1610612748", "1610612756","1610612751", "1610612747", "1610612745", "1610612738", "1610612758", "1610612761", "1610612759", "1610612739","1610612753", "1610612746", "1610612754", "1610612740", "1610612760", "1610612765")
+    teamId_hoopr <- c(4,9,30,26,16,15,18,7,27,29,1,22,6,20,14,21,17,13,10,2,23,28,24,5,19,12,11,3,25,8)
+    team_abb <- c("CHI","GS","CHA","UTAH","MIN","MIL","NY","DEN","WSH","MEM","ATL","POR","DAL","PHI","MIA","PHX","BKN","LAL","HOU","BOS","SAC","TOR","SA","CLE","ORL","LAC","IND","NO","OKC","DET")
+    teamName_nba <- c("Chicago","Golden State","Charlotte","Utah","Minnesota","Milwaukee","New York","Denver","Washington","Memphis","Atlanta","Portland","Dallas","Philadelphia","Miami","Phoenix","Brooklyn","L.A. Lakers","Houston","Boston","Sacramento","Toronto","San Antonio","Cleveland","Orlando","LA Clippers","Indiana","New Orleans","Oklahoma City","Detroit")
+    to_join <- cbind(teamId_hoopr, team_abb)
+    to_join <- cbind(to_join, teamName_nba)
+    to_join <- cbind(to_join, TeamID)
+    
+    # joining the 2 data frames
+    updated <- merge(data.frame(hoopR::nba_teams), data.frame(to_join), by="TeamID")
+    
+    
+    ### creating lookup vectors to use with lookup function - 1 for NBA team ID and 1 for hoopR team id
+    #getLongTeamId <- lookup.team$TeamID
+    #names(getLongTeamId) <- lookup.team$team_abb
+    #getHoopRteamId <- lookup.team$teamId_hoopr
+    #names(getHoopRteamId) <- lookup.team$team_abb
+    ###lookup function to convert hoopR team_abb to teamId to use in stat functions
+    #get_value <- function(mykey, mylookupvector){
+    #    myvalue <- mylookupvector[mykey]
+    #    myvalue <- unname(myvalue)
+    #    return(myvalue[1])
+    #}
+    return(updated)
+}
+#####
+
 ####################
 ## FUNCTIONS FOR USE WITH PBP DATA
 ####################
@@ -79,39 +112,71 @@ def.rebound <- function(text){
 #####
 
 ####################
-## FUNCTIONS TO AGG. OPPONENT STATS FOR TEAMS FROM ESPN BOX SCORES
+## Split shot attempts in player box scores
 ####################
-##
-opponent.stat.agg <- function(gid){
-    #retrieve gid boxscore
-    one.box <- hoopR::espn_nba_player_box(gid)  %>% 
+box.score.split <- function(box.scores){
+    ## ingest player boxscores
+    ## returns shot attemps split into sep. columns
+    
+    split.box <- box.scores %>% 
         tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
         tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
-        tidyr::separate(ft, sep = "-", into = c("ftm","fta"))
-    #retrieve team names
-    uni <- one.box$team_abbreviation %>% unique()
-    # aggregating stats by team, position
-    grouped <- one.box %>%
-        filter(min > 0) %>%
-        group_by(team_abbreviation, athlete_position_abbreviation) %>%
-        summarize(fgmCount = sum(as.numeric(fgm)),
-                  fgaCount = sum(as.numeric(fga)),
-                  fg3mCount = sum(as.numeric(fg3m)),
-                  fg3aCount = sum(as.numeric(fg3a)),
-                  ftmCount = sum(as.numeric(ftm)),
-                  ftaCount = sum(as.numeric(fta)),
-                  orebCount = sum(as.numeric(oreb)),
-                  drebCount = sum(as.numeric(dreb)),
-                  rebCount = sum(as.numeric(reb)),
-                  astCount = sum(as.numeric(ast)),
-                  stlCount = sum(as.numeric(stl)),
-                  blkCount = sum(as.numeric(blk)),
-                  toCount = sum(as.numeric(to)),
-                  pfCount = sum(as.numeric(pf)),
-                  ptsCount = sum(as.numeric(pts)),
-        ) %>%
-        mutate(opp = setdiff(uni, team_abbreviation))
-    return(grouped)
+        tidyr::separate(ft, sep = "-", into = c("ftm","fta")) %>%  
+        
+        return(split.box)
+    
+}
+#####
+
+####################
+## Split shot attempts and avg stats from  game box scores for single player
+####################
+player.box.score.avgs <- function(box.scores, game.ids=NULL, player=NULL){
+    ## ingest a either a data frame of specific games, or full season boxes + vector of 
+    ## gids to filter the boxes and a player name
+    ## returns 2 dataframes the avgs for the player from the games and the boxscores
+    
+    player <- tolower(player)
+    
+    #handles if the season box is passed along with game ids. filters to games and player
+    if(is.null(game.ids) & is.null(player)){
+        box.scores <- box.scores %>% 
+            mutate(athlete_display_name = tolower(athlete_display_name)) %>% 
+            filter(game_id %in% game.ids & athlete_display_name == player)
+        
+    }
+    #filters box scores already filtered for games but not player
+    else if(is.null(player)){
+        box.scores <- box.scores %>% 
+            mutate(athlete_display_name = tolower(athlete_display_name)) %>%
+            filter(athlete_display_name == player)
+    }
+    
+    box.scores <- box.score.split(box.scores)
+    
+    avgs <- box.scores %>% 
+        group_by(athlete_display_name) %>%
+        summarize(gp = n(),
+                  minAvg = mean(as.numeric(min), na.rm = TRUE),
+                  fgmAvg = mean(as.numeric(fgm), na.rm = TRUE),
+                  fgaAvg = mean(as.numeric(fga), na.rm = TRUE),
+                  fg3mAvg = mean(as.numeric(fg3m), na.rm = TRUE),
+                  fg3aAvg = mean(as.numeric(fg3a), na.rm = TRUE),
+                  ftmAvg = mean(as.numeric(ftm), na.rm = TRUE),
+                  ftaAvg = mean(as.numeric(fta), na.rm = TRUE),
+                  orebAvg = mean(as.numeric(oreb), na.rm = TRUE),
+                  dreb = mean(as.numeric(dreb), na.rm = TRUE),
+                  rebAvg = mean(as.numeric(reb), na.rm = TRUE),
+                  astAvg = mean(as.numeric(ast), na.rm = TRUE),
+                  stlAvg = mean(as.numeric(stl), na.rm = TRUE),
+                  blkAvg = mean(as.numeric(blk), na.rm = TRUE),
+                  toAvg = mean(as.numeric(to), na.rm = TRUE),
+                  ptsAvg = mean(as.numeric(pts), na.rm = TRUE)
+        )
+    
+    
+    return(list(box.scores, avgs))
+    
 }
 #####
 
@@ -339,85 +404,115 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
     
     return(df)    
 }
-
 #####
 
-####################
-## FUNCTION TO UPDATE PROVIDED TEAM DATA
-####################
-update.default.team.data <- function(){
-    # data to join with default data frame
-    TeamID <- c("1610612741", "1610612744", "1610612766", "1610612762", "1610612750", "1610612749", "1610612752","1610612743", "1610612764", "1610612763", "1610612737", "1610612757", "1610612742", "1610612755", "1610612748", "1610612756","1610612751", "1610612747", "1610612745", "1610612738", "1610612758", "1610612761", "1610612759", "1610612739","1610612753", "1610612746", "1610612754", "1610612740", "1610612760", "1610612765")
-    teamId_hoopr <- c(4,9,30,26,16,15,18,7,27,29,1,22,6,20,14,21,17,13,10,2,23,28,24,5,19,12,11,3,25,8)
-    team_abb <- c("CHI","GS","CHA","UTAH","MIN","MIL","NY","DEN","WSH","MEM","ATL","POR","DAL","PHI","MIA","PHX","BKN","LAL","HOU","BOS","SAC","TOR","SA","CLE","ORL","LAC","IND","NO","OKC","DET")
-    teamName_nba <- c("Chicago","Golden State","Charlotte","Utah","Minnesota","Milwaukee","New York","Denver","Washington","Memphis","Atlanta","Portland","Dallas","Philadelphia","Miami","Phoenix","Brooklyn","L.A. Lakers","Houston","Boston","Sacramento","Toronto","San Antonio","Cleveland","Orlando","LA Clippers","Indiana","New Orleans","Oklahoma City","Detroit")
-    to_join <- cbind(teamId_hoopr, team_abb)
-    to_join <- cbind(to_join, teamName_nba)
-    to_join <- cbind(to_join, TeamID)
-    
-    # joining the 2 data frames
-    updated <- merge(data.frame(hoopR::nba_teams), data.frame(to_join), by="TeamID")
-    
 
-    ### creating lookup vectors to use with lookup function - 1 for NBA team ID and 1 for hoopR team id
-    #getLongTeamId <- lookup.team$TeamID
-    #names(getLongTeamId) <- lookup.team$team_abb
-    #getHoopRteamId <- lookup.team$teamId_hoopr
-    #names(getHoopRteamId) <- lookup.team$team_abb
-    ###lookup function to convert hoopR team_abb to teamId to use in stat functions
-    #get_value <- function(mykey, mylookupvector){
-    #    myvalue <- mylookupvector[mykey]
-    #    myvalue <- unname(myvalue)
-    #    return(myvalue[1])
-    #}
-    return(updated)
-}
-#####
 
 ####################
-## FUNCTION TO RETRIEVE TEAM OPPONENT RANKS FROM LAST 15 games
+## FUNCTION TO RETRIEVE TEAM OPPONENT RANKS FROM LAST N games
 ####################
-# date info
-last.n.games <- function(n, season){
+opp.stats.last.n.games  <- function(season, num.game.lookback=15, box.scores=NULL, schedule=NULL){
+    # ingest season year, number of games (15 default), data frame of player boxscores,
+    # and data frame of the season schedule
+    # output dataframe for teams stats allowed to opponents, dataframe for the stats grouped by
+    # team and position, and a data frame for each position grouped by team and ranked
     
-    #load schedule
-    schedule <- hoopR::load_nba_schedule(seasons = season)
+    # checks if box scores dataframe is provided and pulls box scores data if not
+    if(is.null(box.scores)){
+        box.scores <- hoopR::load_nba_player_box(seasons = season)
+    }
+    
+    # checks if schedule dataframe is provided and pulls schedule data if not
+    if(is.null(schedule)){
+        schedule <- hoopR::load_nba_schedule(seasons = season)
+    }
+    
     # schedule data for only games played
     completed.games <- schedule %>% filter(status_type_completed == TRUE)
     # gather team abbreviations
-    teams <- append(completed.games$home_abbreviation %>% unique(), 
-                    completed.games$away_abbreviation %>% unique()
-    ) %>%
+    teams <- append(unique(completed.games$home_abbreviation), 
+                    unique(completed.games$away_abbreviation)) %>%
         unique()
-    # looping through team abbreviations to get 15 gids for every team
-    gids <- c()
+    
+    # looping through team abbreviations to get n# of gids for every team
+    # originally, looped only to gather all teams gids but this caused some weird results
+    # with some teams above and below the desired look back. changed to do each team indiviually 
+    # so that the look back holds true for all teams. I ama not sure what caused the descrepancy
     for(t in teams){
-        temp.gids <- completed.games %>%
-            filter(home_abbreviation == t | away_abbreviation == t) %>%
-            arrange(desc(date)) %>%
-            slice(1:n) %>%
-            select(id)
-        gids <- append(gids, temp.gids[["id"]])
+        
+        #starting the first dataframe that all other teams will add into
+        gids <- (completed.games %>%
+                     filter(home_abbreviation == t | away_abbreviation == t) %>%
+                     arrange(desc(date)) %>%
+                     slice(1:num.game.lookback) %>%
+                     select(id))[["id"]]
+        
+        
+        
+        if(t == teams[1]){
+            #retrieve gid boxscores and split att/made, aggregating stats by team, position
+            grouped <- box.scores %>%
+                filter(game_id %in% gids,
+                       team_abbreviation != t,
+                       min > 0) %>% 
+                tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
+                tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
+                tidyr::separate(ft, sep = "-", into = c("ftm","fta")) %>%
+                group_by(game_id, team_abbreviation, athlete_position_abbreviation) %>%
+                summarize(fgmCount = sum(as.numeric(fgm)),
+                          fgaCount = sum(as.numeric(fga)),
+                          fg3mCount = sum(as.numeric(fg3m)),
+                          fg3aCount = sum(as.numeric(fg3a)),
+                          ftmCount = sum(as.numeric(ftm)),
+                          ftaCount = sum(as.numeric(fta)),
+                          orebCount = sum(as.numeric(oreb)),
+                          drebCount = sum(as.numeric(dreb)),
+                          rebCount = sum(as.numeric(reb)),
+                          astCount = sum(as.numeric(ast)),
+                          stlCount = sum(as.numeric(stl)),
+                          blkCount = sum(as.numeric(blk)),
+                          toCount = sum(as.numeric(to)),
+                          pfCount = sum(as.numeric(pf)),
+                          ptsCount = sum(as.numeric(pts)),
+                ) %>%
+                mutate(team= t)
+        }
+        else{
+            #retrieve gid boxscores and split att/made, aggregating stats by team, position
+            temp <- box.scores %>%
+                filter(game_id %in% gids,
+                       team_abbreviation != t,
+                       min > 0) %>% 
+                tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
+                tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
+                tidyr::separate(ft, sep = "-", into = c("ftm","fta")) %>%
+                group_by(game_id, team_abbreviation, athlete_position_abbreviation) %>%
+                summarize(fgmCount = sum(as.numeric(fgm)),
+                          fgaCount = sum(as.numeric(fga)),
+                          fg3mCount = sum(as.numeric(fg3m)),
+                          fg3aCount = sum(as.numeric(fg3a)),
+                          ftmCount = sum(as.numeric(ftm)),
+                          ftaCount = sum(as.numeric(fta)),
+                          orebCount = sum(as.numeric(oreb)),
+                          drebCount = sum(as.numeric(dreb)),
+                          rebCount = sum(as.numeric(reb)),
+                          astCount = sum(as.numeric(ast)),
+                          stlCount = sum(as.numeric(stl)),
+                          blkCount = sum(as.numeric(blk)),
+                          toCount = sum(as.numeric(to)),
+                          pfCount = sum(as.numeric(pf)),
+                          ptsCount = sum(as.numeric(pts)),
+                )%>%
+                mutate(team= t)
+            
+            grouped <- rbind(grouped, temp)
+        }
     }
-    # last 15 gids from all teams 
-    last.15.gids <- gids %>% unique() 
     
-    #using first gid in list to create the main df that will be appended in the loop below
-    gid.first <- last.15.gids[1]
-    stats.team.opp <- opponent.stat.agg(gid.first)
-    
-    #remove 1st gid from list so it doesn't loop
-    gids <- last.15.gids[!last.15.gids %in% c(gid.first)]
-    
-    #looping through remaining games to build dataframe
-    for(gid in gids){
-        temp.team.stats <-  opponent.stat.agg(gid)
-        stats.team.opp <- rbind(stats.team.opp, temp.team.stats)
-    }
-    
-    stats.team.opp.total <- stats.team.opp %>%
+    # groups the agg stats by team for totals over n games
+    stats.team.opp.total <- grouped %>%
         group_by(
-            opp, 
+            team, 
             athlete_position_abbreviation
         ) %>%
         summarize(
@@ -438,6 +533,7 @@ last.n.games <- function(n, season){
             ptsCount = sum(ptsCount)
         )
     
+    # creates dataframes for each position with ranks for each stat
     positions <- c("PG", "SG", "SF", "PF", "C")
     for(pos in positions){
         var.name <- pos
@@ -461,83 +557,15 @@ last.n.games <- function(n, season){
                    )
         )
     }
-    all <- rbind(PG, SG)
-    all <- rbind(all, SF)
-    all <- rbind(all, PF)
-    all <- rbind(all, C)
-    return(all)
+    output <- list(grouped, stats.team.opp.total, PG, SG, SF, PF, C)
+    names(output) <- c("game.opp.stats.by.pos", "team.opp.stats.by.pos.all",
+                       "team.opp.stats.by.pos.pg", "team.opp.stats.by.pos.sg",
+                       "team.opp.stats.by.pos.sf", "team.opp.stats.by.pos.pf",
+                       "team.stats.by.pos.c")
+    
+    return(output)
 }
 
-
-#####
-
-####################
-## Split shot attempts in player box scores
-####################
-box.score.split <- function(box.scores){
-    ## ingest player boxscores
-    ## returns shot attemps split into sep. columns
-    
-    split.box <- box.scores %>% 
-        tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
-        tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
-        tidyr::separate(ft, sep = "-", into = c("ftm","fta")) %>%  
-    
-    return(split.box)
-
-}
-#####
-
-####################
-## Split shot attempts and avg stats from  game box scores for single player
-####################
-player.box.score.avgs <- function(box.scores, game.ids, player){
-    ## ingest a either a data frame of specific games, or full season boxes + vector of 
-    ## gids to filter the boxes and a player name
-    ## returns 2 dataframes the avgs for the player from the games and the boxscores
-    
-    player <- tolower(player)
-    
-    #handles if the season box is passed along with game ids. filters to games and player
-    if(length(game.ids) > 0 & length(player) > 0){
-        box.scores <- box.scores %>% 
-            mutate(athlete_display_name = tolower(athlete_display_name)) %>% 
-            filter(game_id %in% game.ids & athlete_display_name == player)
-        
-    }
-    #filters box scores already filtered for games but not player
-    else if(length(player) > 0){
-        box.scores <- box.scores %>% 
-            mutate(athlete_display_name = tolower(athlete_display_name)) %>%
-            filter(athlete_display_name == player)
-    }
-    
-    box.scores <- box.score.split(box.scores)
-        
-    avgs <- box.scores %>% 
-        group_by(athlete_display_name) %>%
-        summarize(gp = n(),
-                  minAvg = mean(as.numeric(min), na.rm = TRUE),
-                  fgmAvg = mean(as.numeric(fgm), na.rm = TRUE),
-                  fgaAvg = mean(as.numeric(fga), na.rm = TRUE),
-                  fg3mAvg = mean(as.numeric(fg3m), na.rm = TRUE),
-                  fg3aAvg = mean(as.numeric(fg3a), na.rm = TRUE),
-                  ftmAvg = mean(as.numeric(ftm), na.rm = TRUE),
-                  ftaAvg = mean(as.numeric(fta), na.rm = TRUE),
-                  orebAvg = mean(as.numeric(oreb), na.rm = TRUE),
-                  dreb = mean(as.numeric(dreb), na.rm = TRUE),
-                  rebAvg = mean(as.numeric(reb), na.rm = TRUE),
-                  astAvg = mean(as.numeric(ast), na.rm = TRUE),
-                  stlAvg = mean(as.numeric(stl), na.rm = TRUE),
-                  blkAvg = mean(as.numeric(blk), na.rm = TRUE),
-                  toAvg = mean(as.numeric(to), na.rm = TRUE),
-                  ptsAvg = mean(as.numeric(pts), na.rm = TRUE)
-        )
-    
-    
-    return(list(box.scores, avgs))
-
-}
 #####
 
 ###############

@@ -136,15 +136,16 @@ matchups.today <- games.today %>% select(home_team_abb, away_team_abb)
 # retrieving the player boxscore for the season, 
 # this will be used to access players that are playing today and agg stats
 boxscore.player <- hoopR::load_nba_player_box(s) 
-harvest <- propfarming(boxscore.player, team.id.today, matchups.today, 3)
+harvest <- propfarming(boxscore.player, team.id.today, matchups.today)
 harvest$date <- search.date
+#write.csv(x = harvest,file =  "data/2023-02-01_stats.csv", row.names=FALSE)
 ### paste back location if errors with  propfarming function
 #####
 
 ##################
 # scrape odds data
 ##################
-betting.table <- read.csv("data/2023-01-29_odds.csv") %>%
+betting.table <- read.csv("data/2023-01-31_odds.csv") %>%
                     pivot_wider(names_from = stat,
                                 values_from = c(line, oOdds, uOdds))
 
@@ -213,8 +214,13 @@ View(harvest)
 ##################
 # retrieving opponent ranks by position
 ##################
-lasts <- last.n.games(15, 2023)
-View(lasts %>% select(opp, contains("Rank")))
+schedule <- load_nba_schedule(s)
+opp.stats <- opp.stats.last.n.games(season=s,
+                       num.game.lookback =15, 
+                       box.scores=boxscore.player, 
+                       schedule=schedule)
+
+
 #####
 
 ##################
