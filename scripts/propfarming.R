@@ -138,7 +138,7 @@ matchups.today <- games.today %>% select(home_team_abb, away_team_abb)
 boxscore.player <- hoopR::load_nba_player_box(s) 
 harvest <- propfarming(boxscore.player, team.id.today, matchups.today)
 harvest$date <- search.date
-#write.csv(x = harvest,file =  "data/2023-02-01_stats.csv", row.names=FALSE)
+#write.csv(x = harvest,file =  "data/2023-xx-xx_stats.csv", row.names=FALSE)
 ### paste back location if errors with  propfarming function
 #####
 
@@ -212,13 +212,23 @@ View(harvest)
 #####
 
 ##################
-# retrieving opponent ranks by position
+# retrieving opponent ranks by position for last N games
 ##################
 schedule <- load_nba_schedule(s)
+# calling function to return teams opponent stats
 opp.stats <- opp.stats.last.n.games(season=s,
                        num.game.lookback =15, 
                        box.scores=boxscore.player, 
                        schedule=schedule)
+# dropping the count columns and keeping the ranks
+opp.position.ranks <- opp.stats$team.opp.stats.by.pos %>%
+                        select(team, athlete_position_abbreviation, contains("Rank"))
+# joining the ranks back to the player stat and prop harvest
+harvest <- harvest %>%
+            inner_join(opp.position.ranks,
+                       by=c('team_abbreviation'='team', 
+                            'athlete_position_abbreviation'='athlete_position_abbreviation')
+                       )
 
 
 #####
