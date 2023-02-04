@@ -18,6 +18,8 @@ s = 2023
 n.games <- 3
 cutoff_date <- Sys.Date() - 12
 search.date <- Sys.Date()
+betting.file.path <- paste("data/", search.date, "_odds.csv", sep="")
+harvest.file.path <- paste("output/", search.date, "_harvest.csv", sep="")
 
 # adding the additional IDs and team names to the nba_teams 
 # the default dataframe that loads with the package. using function from datacrackers.R
@@ -138,14 +140,12 @@ matchups.today <- games.today %>% select(home_team_abb, away_team_abb)
 boxscore.player <- hoopR::load_nba_player_box(s) 
 harvest <- propfarming(boxscore.player, team.id.today, matchups.today)
 harvest$date <- search.date
-#write.csv(x = harvest,file =  "data/2023-xx-xx_stats.csv", row.names=FALSE)
-### paste back location if errors with  propfarming function
 #####
 
 ##################
-# scrape odds data
+# scrape odds data and join to player harvest data
 ##################
-betting.table <- read.csv("data/2023-01-31_odds.csv") %>%
+betting.table <- read.csv(betting.file.path) %>%
                     pivot_wider(names_from = stat,
                                 values_from = c(line, oOdds, uOdds))
 
@@ -155,58 +155,36 @@ missing.players <- setdiff(harvest$athlete_display_name, betting.table$PLAYER)
 harvest <- merge(harvest, betting.table, 
                  by.x = "athlete_display_name",
                  by.y = "PLAYER"
-                 )
-
+                 ) %>%
+            select(-team, -date.y)
 #####
 
 ##################
 # calculating line score - actual line vs avg calcs
 ##################
-# creating the synthetic avg used for prop score
-n.games <- 3
 harvest <- harvest %>%
-    rowwise %>%
-    mutate(
-        ptsAvgSynth = synth.avg(ptsAvg, ptsAvgL3, n.games, gp),
-        rebAvgSynth = synth.avg(rebAvg, rebAvgL3, n.games, gp),
-        astAvgSynth = synth.avg(astAvg, astAvgL3, n.games, gp),
-        stlAvgSynth = synth.avg(stlAvg, stlAvgL3, n.games, gp),
-        blkAvgSynth = synth.avg(blkAvg, blkAvgL3, n.games, gp),
-        fg3mAvgSynth = synth.avg(fg3mAvg, fg3mAvgL3, n.games, gp),
-        praAvgSynth = synth.avg(praAvg, praAvgL3, n.games, gp),
-        prAvgSynth = synth.avg(prAvg, prAvgL3, n.games, gp),
-        paAvgSynth = synth.avg(paAvg, paAvgL3, n.games, gp),
-        raAvgSynth = synth.avg(raAvg, raAvgL3, n.games, gp),
-        sbAvgSynth = synth.avg(sbAvg, sbAvgL3, n.games, gp)
-    ) %>%
-    mutate(
-        ptsOSynth = ptsAvgSynth + ptsStdL3,
-        ptsUSynth = ptsAvgSynth - ptsStdL3,
-        rebOSynth = rebAvgSynth + rebStdL3,
-        rebUSynth = rebAvgSynth - rebStdL3,
-        astOSynth = astAvgSynth + astStdL3,
-        astUSynth = astAvgSynth - astStdL3,
-        stlOSynth = stlAvgSynth + stlStdL3,
-        stlUSynth = stlAvgSynth - stlStdL3,
-        blkOSynth = blkAvgSynth + blkStdL3,
-        blkUSynth = blkAvgSynth - blkStdL3,
-        fg3mOSynth = fg3mAvgSynth + fg3mStdL3,
-        fg3mUSynth = fg3mAvgSynth - fg3mStdL3,
-        praOSynth = praAvgSynth + praStdL3,
-        praUSynth = praAvgSynth - praStdL3,
-        prOSynth = prAvgSynth + prStdL3,
-        prUSynth = prAvgSynth - prStdL3,
-        paOSynth = paAvgSynth + paStdL3,
-        paUSynth = paAvgSynth - paStdL3,
-        raOSynth = raAvgSynth + raStdL3,
-        raUSynth = raAvgSynth - raStdL3,
-        sbOSynth = sbAvgSynth + sbStdL3,
-        sbUSynth = sbAvgSynth - sbStdL3
-    )
-#####
-####NEED TO CHECK SYNTH CALC + OVER AND UNDER AVG 
-####  NEED TO CALC OVER AND UNDER SCORES AGAINST LINE DATA
-
+            mutate(
+                ptsOscore = (ptsSynth - ptsStdL3) - line_PTS,
+                ptsUscore = line_PTS - (ptsSynth + ptsStdL3),
+                rebOscore = (rebSynth - rebStdL3) - line_REB,
+                rebUscore = line_REB - (rebSynth + rebStdL3),
+                astOscore = (astSynth - astStdL3) - line_AST,
+                astUscore = line_AST - (astSynth + astStdL3),
+                #stlOscore = (stlSynth - stlStdL3) - line_STL,
+                #stlUscore = line_STL - (stlSynth + stlStdL3),
+                #blkOscore = (blkSynth - blkStdL3) - line_BLK,
+                #blkUscore = line_BLK - (blkSynth + blkStdL3),
+                fg3mOscore = (fg3mSynth - fg3mStdL3) - line_THREES,
+                fg3mUscore = line_THREES - (fg3mSynth + fg3mStdL3),
+                praOscore = (praSynth - praStdL3) - line_PTSREBAST,
+                praUscore = line_PTSREBAST - (praSynth + praStdL3),
+                paOscore = (paSynth - paStdL3) - line_PTSAST,
+                paUscore = line_PTSAST - (paSynth + paStdL3),
+                raOscore = (raSynth - raStdL3) - line_REBAST,
+                raUscore = line_REBAST - (raSynth + raStdL3),
+                #sbOscore = (sbSynth - sbStdL3) - line_STLBLK,
+                #sbsUscore = line_STLBLK - (sbSynth + sbStdL3)
+            )
 
 View(harvest)
 #####
@@ -229,8 +207,14 @@ harvest <- harvest %>%
                        by=c('team_abbreviation'='team', 
                             'athlete_position_abbreviation'='athlete_position_abbreviation')
                        )
+#renaming columns
+harvest <- harvest %>%
+    rename(c(team = team_abbreviation,
+             player = athlete_display_name,
+             pos = athlete_position_abbreviation)
+           )
 
-
+View(harvest)
 #####
 
 ##################
@@ -246,10 +230,11 @@ stats <- espn_nba_player_box(gids.today[1])
 #harvest$actFg3m <- 
 #####
 
+# final data output
+write.csv(x = harvest,file =  harvest.file.path, row.names=FALSE)
+
 ###############################################
 # NEED TO ADD: 
-    #line/odds, 
-    #prop scores calculated from avgs and lines
     #actual results to determine winners
 ###############################################
 
