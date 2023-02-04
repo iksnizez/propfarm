@@ -1,6 +1,40 @@
 library(hoopR)
 library(dplyr)
 library(tidyr)
+library(DBI)
+library(RMySQL)
+library(jsonlite)
+####################
+## FUNCTION TO CONNECT TO DB
+####################
+harvestDBconnect <- function(){
+    # hard coded function to connect to harvest data base
+    # no inputs are necessary
+    # outputs the db connection
+    
+    #import credentials
+    path <- '../../Notes-General/config.txt'
+    creds<-readLines(path)
+    creds<-lapply(creds,fromJSON)
+    
+    #dbUser <- creds[[1]]$mysqlSurface$users[3]
+    #dbPw <- creds[[1]]$mysqlSurface$creds$data
+    dbUser <- creds[[1]]$mysqlSurface$users[2]
+    dbPw <- creds[[1]]$mysqlSurface$creds$jb
+    dbHost <- creds[[1]]$mysqlSurface$dbNBA$host
+    dbName <- creds[[1]]$mysqlSurface$dbNBA$database
+    dbPort <- creds[[1]]$mysqlSurface$dbNBA$port
+    
+    #connect to MySQL db    
+    conn = DBI::dbConnect(RMySQL::MySQL(),
+                          dbname=dbName,
+                          host=dbHost,
+                          port=dbPort,
+                          user=dbUser,
+                          password=dbPw)
+    return(conn)
+}
+#####
 
 ####################
 ## FUNCTION TO UPDATE PROVIDED TEAM DATA
@@ -121,7 +155,7 @@ synth.avg <- function(season_avg, n_avg, n_games=3, games_played){
     n.avg.wt <- (min(1-(n_games / games_played), 0.6))
     season.avg.wt <- (1 - n.avg.wt)
     # calculating the wt. synthetic avg
-    sythetic.avg <- (n_avg * n.avg.wt) + (season_avg * season.avg.wt)
+    sythetic.avg <- round((n_avg * n.avg.wt) + (season_avg * season.avg.wt),2)
     
     return(sythetic.avg)
 }
@@ -171,30 +205,30 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
         select(athlete_id,min, pts, reb, ast, stl, blk, fg3m, pra, pr, pa, ra, sb) %>%
         group_by(athlete_id) %>%
         summarize(gp = n(),
-                  minAvg = mean(min, na.rm=TRUE),
-                  ptsAvg = mean(pts, na.rm=TRUE),
-                  rebAvg = mean(reb, na.rm=TRUE),
-                  astAvg = mean(ast, na.rm=TRUE),
-                  stlAvg = mean(stl, na.rm=TRUE),
-                  blkAvg = mean(blk, na.rm=TRUE),
-                  fg3mAvg = mean(fg3m, na.rm=TRUE),
-                  praAvg = mean(pra, na.rm=TRUE),
-                  prAvg = mean(pr, na.rm=TRUE),
-                  paAvg = mean(pa, na.rm=TRUE),
-                  raAvg = mean(ra, na.rm=TRUE),
-                  sbAvg = mean(sb, na.rm=TRUE),
-                  minstd = sd(min, na.rm=TRUE),
-                  ptsStd = sd(pts, na.rm=TRUE),
-                  rebStd = sd(reb, na.rm=TRUE),
-                  astStd = sd(ast, na.rm=TRUE),
-                  stlStd = sd(stl, na.rm=TRUE),
-                  blkStd = sd(blk, na.rm=TRUE),
-                  fg3mStd = sd(fg3m, na.rm=TRUE),
-                  praStd = sd(pra, na.rm=TRUE),
-                  prStd = sd(pr, na.rm=TRUE),
-                  paStd = sd(pa, na.rm=TRUE),
-                  raStd = sd(ra, na.rm=TRUE),
-                  sbStd = sd(sb, na.rm=TRUE)
+                  minAvg = round(mean(min, na.rm=TRUE),2),
+                  ptsAvg = round(mean(pts, na.rm=TRUE),2),
+                  rebAvg = round(mean(reb, na.rm=TRUE),2),
+                  astAvg = round(mean(ast, na.rm=TRUE),2),
+                  stlAvg = round(mean(stl, na.rm=TRUE),2),
+                  blkAvg = round(mean(blk, na.rm=TRUE),2),
+                  fg3mAvg = round(mean(fg3m, na.rm=TRUE),2),
+                  praAvg = round(mean(pra, na.rm=TRUE),2),
+                  prAvg = round(mean(pr, na.rm=TRUE),2),
+                  paAvg = round(mean(pa, na.rm=TRUE),2),
+                  raAvg = round(mean(ra, na.rm=TRUE),2),
+                  sbAvg = round(mean(sb, na.rm=TRUE),2),
+                  minstd = round(sd(min, na.rm=TRUE),2),
+                  ptsStd = round(sd(pts, na.rm=TRUE),2),
+                  rebStd = round(sd(reb, na.rm=TRUE),2),
+                  astStd = round(sd(ast, na.rm=TRUE),2),
+                  stlStd = round(sd(stl, na.rm=TRUE),2),
+                  blkStd = round(sd(blk, na.rm=TRUE),2),
+                  fg3mStd = round(sd(fg3m, na.rm=TRUE),2),
+                  praStd = round(sd(pra, na.rm=TRUE),2),
+                  prStd = round(sd(pr, na.rm=TRUE),2),
+                  paStd = round(sd(pa, na.rm=TRUE),2),
+                  raStd = round(sd(ra, na.rm=TRUE),2),
+                  sbStd = round(sd(sb, na.rm=TRUE),2)
         )
     
     # adding the 3 game averages and standard deviations
@@ -202,30 +236,30 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
         select(athlete_id,min, pts, reb, ast, stl, blk, fg3m, pra, pr, pa, ra, sb) %>%
         group_by(athlete_id) %>%
         filter(row_number()<=3) %>%
-        summarize(minAvgL3 = mean(min, na.rm=TRUE),
-                  ptsAvgL3 = mean(pts, na.rm=TRUE),
-                  rebAvgL3 = mean(reb, na.rm=TRUE),
-                  astAvgL3 = mean(ast, na.rm=TRUE),
-                  stlAvgL3 = mean(stl, na.rm=TRUE),
-                  blkAvgL3 = mean(blk, na.rm=TRUE),
-                  fg3mAvgL3 = mean(fg3m, na.rm=TRUE),
-                  praAvgL3 = mean(pra, na.rm=TRUE),
-                  prAvgL3 = mean(pr, na.rm=TRUE),
-                  paAvgL3 = mean(pa, na.rm=TRUE),
-                  raAvgL3 = mean(ra, na.rm=TRUE),
-                  sbAvgL3 = mean(sb, na.rm=TRUE),
-                  minStdL3 = sd(min, na.rm=TRUE),
-                  ptsStdL3 = sd(pts, na.rm=TRUE),
-                  rebStdL3 = sd(reb, na.rm=TRUE),
-                  astStdL3 = sd(ast, na.rm=TRUE),
-                  stlStdL3 = sd(stl, na.rm=TRUE),
-                  blkStdL3 = sd(blk, na.rm=TRUE),
-                  fg3mStdL3 = sd(fg3m, na.rm=TRUE),
-                  praStdL3 = sd(pra, na.rm=TRUE),
-                  prStdL3 = sd(pr, na.rm=TRUE),
-                  paStdL3 = sd(pa, na.rm=TRUE),
-                  raStdL3 = sd(ra, na.rm=TRUE),
-                  sbStdL3 = sd(sb, na.rm=TRUE)
+        summarize(minAvgL3 = round(mean(min, na.rm=TRUE),2),
+                  ptsAvgL3 = round(mean(pts, na.rm=TRUE),2),
+                  rebAvgL3 = round(mean(reb, na.rm=TRUE),2),
+                  astAvgL3 = round(mean(ast, na.rm=TRUE),2),
+                  stlAvgL3 = round(mean(stl, na.rm=TRUE),2),
+                  blkAvgL3 = round(mean(blk, na.rm=TRUE),2),
+                  fg3mAvgL3 = round(mean(fg3m, na.rm=TRUE),2),
+                  praAvgL3 = round(mean(pra, na.rm=TRUE),2),
+                  prAvgL3 = round(mean(pr, na.rm=TRUE),2),
+                  paAvgL3 = round(mean(pa, na.rm=TRUE),2),
+                  raAvgL3 = round(mean(ra, na.rm=TRUE),2),
+                  sbAvgL3 = round(mean(sb, na.rm=TRUE),2),
+                  minStdL3 = round(sd(min, na.rm=TRUE),2),
+                  ptsStdL3 = round(sd(pts, na.rm=TRUE),2),
+                  rebStdL3 = round(sd(reb, na.rm=TRUE),2),
+                  astStdL3 = round(sd(ast, na.rm=TRUE),2),
+                  stlStdL3 = round(sd(stl, na.rm=TRUE),2),
+                  blkStdL3 = round(sd(blk, na.rm=TRUE),2),
+                  fg3mStdL3 = round(sd(fg3m, na.rm=TRUE),2),
+                  praStdL3 = round(sd(pra, na.rm=TRUE),2),
+                  prStdL3 = round(sd(pr, na.rm=TRUE),2),
+                  paStdL3 = round(sd(pa, na.rm=TRUE),2),
+                  raStdL3 = round(sd(ra, na.rm=TRUE),2),
+                  sbStdL3 = round(sd(sb, na.rm=TRUE),2)
         )
     
     # adding the 10 game averages and standard deviations
@@ -233,30 +267,30 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
         select(athlete_id,min, pts, reb, ast, stl, blk, fg3m, pra, pr, pa, ra, sb) %>%
         group_by(athlete_id) %>%
         filter(row_number()<=10) %>%
-        summarize(minAvgL10 = mean(min, na.rm=TRUE),
-                  ptsAvgL10 = mean(pts, na.rm=TRUE),
-                  rebAvgL10 = mean(reb, na.rm=TRUE),
-                  astAvgL10 = mean(ast, na.rm=TRUE),
-                  stlAvgL10 = mean(stl, na.rm=TRUE),
-                  blkAvgL10 = mean(blk, na.rm=TRUE),
-                  fg3mAvgL10 = mean(fg3m, na.rm=TRUE),
-                  praAvgL10 = mean(pra, na.rm=TRUE),
-                  prAvgL10 = mean(pr, na.rm=TRUE),
-                  paAvgL10 = mean(pa, na.rm=TRUE),
-                  raAvgL10 = mean(ra, na.rm=TRUE),
-                  sbAvgL10 = mean(sb, na.rm=TRUE),
-                  minStdL10 = sd(min, na.rm=TRUE),
-                  ptsStdL10 = sd(pts, na.rm=TRUE),
-                  rebStdL10 = sd(reb, na.rm=TRUE),
-                  astStdL10 = sd(ast, na.rm=TRUE),
-                  stlStdL10 = sd(stl, na.rm=TRUE),
-                  blkStdL10 = sd(blk, na.rm=TRUE),
-                  fg3mStdL10 = sd(fg3m, na.rm=TRUE),
-                  praStdL10 = sd(pra, na.rm=TRUE),
-                  prStdL10 = sd(pr, na.rm=TRUE),
-                  paStdL10 = sd(pa, na.rm=TRUE),
-                  raStdL10 = sd(ra, na.rm=TRUE),
-                  sbStdL10 = sd(sb, na.rm=TRUE)
+        summarize(minAvgL10 = round(mean(min, na.rm=TRUE),2),
+                  ptsAvgL10 = round(mean(pts, na.rm=TRUE),2),
+                  rebAvgL10 = round(mean(reb, na.rm=TRUE),2),
+                  astAvgL10 = round(mean(ast, na.rm=TRUE),2),
+                  stlAvgL10 = round(mean(stl, na.rm=TRUE),2),
+                  blkAvgL10 = round(mean(blk, na.rm=TRUE),2),
+                  fg3mAvgL10 = round(mean(fg3m, na.rm=TRUE),2),
+                  praAvgL10 = round(mean(pra, na.rm=TRUE),2),
+                  prAvgL10 = round(mean(pr, na.rm=TRUE),2),
+                  paAvgL10 = round(mean(pa, na.rm=TRUE),2),
+                  raAvgL10 = round(mean(ra, na.rm=TRUE),2),
+                  sbAvgL10 = round(mean(sb, na.rm=TRUE),2),
+                  minStdL10 = round(sd(min, na.rm=TRUE),2),
+                  ptsStdL10 = round(sd(pts, na.rm=TRUE),2),
+                  rebStdL10 = round(sd(reb, na.rm=TRUE),2),
+                  astStdL10 = round(sd(ast, na.rm=TRUE),2),
+                  stlStdL10 = round(sd(stl, na.rm=TRUE),2),
+                  blkStdL10 = round(sd(blk, na.rm=TRUE),2),
+                  fg3mStdL10 = round(sd(fg3m, na.rm=TRUE),2),
+                  praStdL10 = round(sd(pra, na.rm=TRUE),2),
+                  prStdL10 = round(sd(pr, na.rm=TRUE),2),
+                  paStdL10 = round(sd(pa, na.rm=TRUE),2),
+                  raStdL10 = round(sd(ra, na.rm=TRUE),2),
+                  sbStdL10 = round(sd(sb, na.rm=TRUE),2)
         )
     
     #merging the season avg data with the last 3 avg data and last 10 avg
@@ -264,28 +298,32 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
     df <- merge(df, players.today.l10.avgs, by = "athlete_id")
     #adding the player name back to the data
     df <- merge(players.today %>% 
-                    select(athlete_id, athlete_display_name, athlete_position_abbreviation, team_abbreviation) %>% 
+                    select(athlete_id, athlete_display_name, athlete_position_abbreviation, team_abbreviation, game_id) %>% 
                     group_by(athlete_id)%>%
                     filter(row_number()==1), 
                 df, 
                 by = "athlete_id",
                 all.x = TRUE)
     
-    # filtering data to players with >=21 avg. minutes in the last 10 games
+    # filtering data to players with >=20 avg. minutes in the last 10 games
     # adding:
         #back-to-back flag 
         #opponent
     df <- df %>%
-        filter(minAvgL10 >= 21) %>%
+        filter(minAvgL10 >= 20) %>%
         rowwise() %>%
-        mutate(btb = ifelse((team_abbreviation %in% back.to.back.first) | (team_abbreviation %in% back.to.back.last),
-                            1,
-                            0
+        mutate(btb = case_when((team_abbreviation %in% back.to.back.first) ~ 1,
+                               (team_abbreviation %in% back.to.back.last) ~ 2,
+                               TRUE ~ 0
                      ),
                 opp = ifelse(team_abbreviation %in% matchups.today$home_team_abb,
                              (matchups.today %>% filter(home_team_abb == team_abbreviation) %>% select(away_team_abb))[[1]],
                              (matchups.today %>% filter(away_team_abb == team_abbreviation) %>% select(home_team_abb))[[1]]
                       ),
+                btbOpp = case_when((opp %in% back.to.back.first) ~ 1,
+                                   (opp %in% back.to.back.last) ~ 2,
+                                   TRUE ~ 0
+                ),
                 ptsSynth = synth.avg(ptsAvg, ptsAvgL3, 3, gp),
                 rebSynth = synth.avg(rebAvg, rebAvgL3, 3, gp),
                 astSynth = synth.avg(astAvg, astAvgL3, 3, gp),
@@ -302,8 +340,6 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
     return(df)    
 }
 #####
-
-
 
 ####################
 ## FUNCTION TO RETRIEVE TEAM OPPONENT RANKS FROM LAST N games
@@ -460,13 +496,53 @@ opp.stats.last.n.games  <- function(season, num.game.lookback=15, box.scores=NUL
     position.ranks <- rbind(position.ranks, PF)
     position.ranks <- rbind(position.ranks, C)
     
-    output <- list(grouped, position.ranks)
-    names(output) <- c("game.opp.stats.by.pos", "team.opp.stats.by.pos")
+    output <- list(grouped, position.ranks, stats.team.opp.total)
+    names(output) <- c("game.opp.stats.by.pos", "team.opp.stats.by.pos", "test")
     
     return(output)
 }
 
 #####
+
+####################
+## FUNCTION TO RETRIEVE TEAM OPPONENT RANKS FROM LAST N games
+####################
+player.box.score.avgs <- function(box_scores, game_ids, stats_player_name){
+    
+    stats_player_name <- tolower(stats_player_name)
+    
+    box_scores <- box_scores %>%
+                    mutate(athlete_display_name = tolower(athlete_display_name)) %>%
+                    filter(game_id %in% game_ids & 
+                           athlete_display_name == stats_player_name) %>%
+                    tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
+                    tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
+                    tidyr::separate(ft, sep = "-", into = c("ftm","fta"))
+    
+    avgs <-   box_scores %>%  
+        group_by(athlete_display_name) %>%
+        summarize(
+            minAvg = mean(as.numeric(min), na.rm = TRUE),
+            fgmAvg = mean(as.numeric(fgm), na.rm = TRUE),
+            fgaAvg = mean(as.numeric(fga), na.rm = TRUE),
+            fg3mAvg = mean(as.numeric(fg3m), na.rm = TRUE),
+            fg3aAvg = mean(as.numeric(fg3a), na.rm = TRUE),
+            ftmAvg = mean(as.numeric(ftm), na.rm = TRUE),
+            ftaAvg = mean(as.numeric(fta), na.rm = TRUE),
+            orebAvg = mean(as.numeric(oreb), na.rm = TRUE),
+            dreb = mean(as.numeric(dreb), na.rm = TRUE),
+            rebAvg = mean(as.numeric(reb), na.rm = TRUE),
+            astAvg = mean(as.numeric(ast), na.rm = TRUE),
+            stlAvg = mean(as.numeric(stl), na.rm = TRUE),
+            blkAvg = mean(as.numeric(blk), na.rm = TRUE),
+            toAvg = mean(as.numeric(to), na.rm = TRUE),
+            ptsAvg = mean(as.numeric(pts), na.rm = TRUE)
+        )
+        
+    
+    return(list(box_scores, avgs))
+}
+
 
 ###############
 # retrieving a player's missed games and calculating player avg for those games
@@ -557,4 +633,6 @@ player.missed.games.stats <- function(team_abb, missed_player_names, stats_playe
 }
 
 #####
+
+
 

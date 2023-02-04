@@ -3,6 +3,7 @@ library(DBI)
 library(RMySQL)
 library(jsonlite)
 library(dplyr)
+library(dbx)
 library(tidyr)
 library(stringr)
 library(rvest) # html scraping
@@ -11,48 +12,36 @@ library(zoo) # rolling averages
 #library(reticulate) # running python script to get the odds scrape
 source("scripts/functions/datacrackers.R")
 
-
-# static parameters used throughout the script
+##################
+# Setting variables and hitting api
+##################
+### static parameters used throughout the script
 season = "2022-23"
 s = 2023
 n.games <- 3
 cutoff_date <- Sys.Date() - 12
 search.date <- Sys.Date()
+today.date.char <- format(search.date, "%Y%m%d")
+yesterday.date.char <- format(search.date - 1, "%Y%m%d")  #using to look for B2Bs
+tomorrow.date.char <- format(search.date + 1, "%Y%m%d")   #using to look for B2Bs
+
+### grab the games playing today, tomorrow and yesterday
+games.today <- espn_nba_scoreboard (season = today.date.char)
+games.yesterday <- espn_nba_scoreboard (season = yesterday.date.char)
+games.tomorrow <- espn_nba_scoreboard (season = tomorrow.date.char)
+
+### retrieving the player boxscore and schedule for the season, 
+# this will be used to access players that are playing today and agg stats
+boxscore.player <- hoopR::load_nba_player_box(s)
+schedule <- load_nba_schedule(s)
+
+#save paths
 betting.file.path <- paste("data/", search.date, "_odds.csv", sep="")
 harvest.file.path <- paste("output/", search.date, "_harvest.csv", sep="")
 
 # adding the additional IDs and team names to the nba_teams 
 # the default dataframe that loads with the package. using function from datacrackers.R
 nba_teams <- update.default.team.data()
-
-####
-
-##################
-# connect to db
-##################
-#import credentials
-path <- '../../Notes-General/config.txt'
-creds<-readLines(path)
-creds<-lapply(creds,fromJSON)
-
-dbUser <- creds[[1]][2]$mysqlSurface$users[2]
-dbPw <- creds[[1]][2]$mysqlSurface$creds$data
-dbHost <- creds[[1]][2]$mysqlSurface$dbNBA$host
-dbName <- creds[[1]][2]$mysqlSurface$dbNBA$database
-
-
-#connect to MySQL db    
-conn = DBI::dbConnect(RMySQL::MySQL(),
-                      dbname=dbName,
-                      host=dbHost,
-                      port=3306,
-                      user=dbUser,
-                      password=dbPw)
-remove(dbUser)
-remove(dbPw)
-remove(dbHost)
-remove(dbName)
-remove(creds)
 #####
 
 ##################
@@ -105,16 +94,6 @@ team.records %>% arrange(team) %>% select(team, wATS, lATS, tATS)
 ##################
 # gathering teams and players playing today
 ##################
-# convert today's date to string for schedule function
-today.date.char <- format(search.date, "%Y%m%d")
-yesterday.date.char <- format(search.date - 1, "%Y%m%d")  #using to look for B2Bs
-tomorrow.date.char <- format(search.date + 1, "%Y%m%d")   #using to look for B2Bs
-
-#grab the games playing today, tomorrow and yesterday
-games.today <- espn_nba_scoreboard (season = today.date.char)
-games.yesterday <- espn_nba_scoreboard (season = yesterday.date.char)
-games.tomorrow <- espn_nba_scoreboard (season = tomorrow.date.char)
-
 #grab the teams playing today, tomorrow and yesterday
 team.names.today <-  unique(c(games.today$away_team_abb, games.today$home_team_abb))
 team.names.yesterday <-  unique(c(games.yesterday$away_team_abb, games.yesterday$home_team_abb))
@@ -129,15 +108,13 @@ gids.today <- unique(games.today$game_id)
 #creating team list for front- and backend back-to-backs
 back.to.back.first.id <- intersect(team.id.today, team.id.yesterday)
 back.to.back.last.id <- intersect(team.id.today, team.id.tomorrow)
-back.to.back.first <- intersect(team.names.today, team.names.yesterday)
-back.to.back.last <- intersect(team.names.today, team.names.tomorrow)
+back.to.back.first <- intersect(team.names.today, team.names.tomorrow)
+back.to.back.last <- intersect(team.names.today, team.names.yesterday)
 
 #creating matchup lookup
 matchups.today <- games.today %>% select(home_team_abb, away_team_abb)
 
-# retrieving the player boxscore for the season, 
-# this will be used to access players that are playing today and agg stats
-boxscore.player <- hoopR::load_nba_player_box(s) 
+# pulling player stats
 harvest <- propfarming(boxscore.player, team.id.today, matchups.today)
 harvest$date <- search.date
 #####
@@ -156,7 +133,8 @@ harvest <- merge(harvest, betting.table,
                  by.x = "athlete_display_name",
                  by.y = "PLAYER"
                  ) %>%
-            select(-team, -date.y)
+            select(-team, -date.y) %>%
+            rename(c(date = date.x))
 #####
 
 ##################
@@ -178,21 +156,21 @@ harvest <- harvest %>%
                 fg3mUscore = line_THREES - (fg3mSynth + fg3mStdL3),
                 praOscore = (praSynth - praStdL3) - line_PTSREBAST,
                 praUscore = line_PTSREBAST - (praSynth + praStdL3),
+                prOscore = (prSynth - prStdL3) - line_PTSREB,
+                prUscore = line_PTSREB - (prSynth + prStdL3),
                 paOscore = (paSynth - paStdL3) - line_PTSAST,
                 paUscore = line_PTSAST - (paSynth + paStdL3),
                 raOscore = (raSynth - raStdL3) - line_REBAST,
                 raUscore = line_REBAST - (raSynth + raStdL3),
                 #sbOscore = (sbSynth - sbStdL3) - line_STLBLK,
-                #sbsUscore = line_STLBLK - (sbSynth + sbStdL3)
+                #sbsUscore = line_STLBLK - (sbSynth + sbStdL3),
+                date = as.Date(date, format="%Y-%m-%d")
             )
-
-View(harvest)
 #####
 
 ##################
 # retrieving opponent ranks by position for last N games
 ##################
-schedule <- load_nba_schedule(s)
 # calling function to return teams opponent stats
 opp.stats <- opp.stats.last.n.games(season=s,
                        num.game.lookback =15, 
@@ -213,29 +191,106 @@ harvest <- harvest %>%
              player = athlete_display_name,
              pos = athlete_position_abbreviation)
            )
-
-View(harvest)
 #####
 
 ##################
-# retrieving stat line from the last game
+# add current day harvest to database
 ##################
-gids.today
-stats <- espn_nba_player_box(gids.today[1])
-#harvest$actPts <- 
-#harvest$actReb <- 
-#harvest$actAst <- 
-#harvest$actStl <- 
-#harvest$actBlk <- 
-#harvest$actFg3m <- 
+conn <- harvestDBconnect()
+dbSendQuery(conn, "SET GLOBAL local_infile = true;")
+dbWriteTable(conn, name = "props", value= harvest, row.names=FALSE, append = TRUE)
+dbSendQuery(conn, "SET GLOBAL local_infile = false;")
+dbDisconnect(conn)
+
+##################
+# retrieving stat line from the last game and updating db
+##################
+
+# filtering to only the most recent games for the actual stats to add to
+# the most recent harvest and determine if over or under won
+# The boxscores game_date is actual date + 1, to pull yesterday = use today date
+boxscore.most.recent <- boxscore.player %>% 
+                            filter(game_date == search.date)
+
+# processing the box scores
+boxscore.most.recent <- boxscore.most.recent %>%
+    tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
+    select(game_id, athlete_id, min, pts, reb, ast, stl, blk, fg3m, to) %>% 
+    rename(c(minAct = min,
+             ptsAct = pts,
+             rebAct = reb,
+             astAct = ast,
+             stlAct = stl,
+             blkAct = blk,
+             fg3mAct = fg3m,
+             toAct = to)
+           ) %>%
+    mutate(athlete_id = as.integer(athlete_id),
+           ptsAct = as.integer(ptsAct),
+           rebAct = as.integer(rebAct),
+           astAct = as.integer(astAct),
+           stlAct = as.integer(stlAct),
+           blkAct = as.integer(blkAct),
+           fg3mAct = as.integer(fg3mAct),
+           toAct = as.integer(toAct),
+           praAct = ptsAct + rebAct + astAct,
+           prAct = ptsAct + rebAct,
+           paAct = ptsAct  + astAct,
+           raAct = rebAct + astAct,
+           sbAct = stlAct + blkAct
+    )
+
+# pulling the most recent harvest to add actual and calculate wins
+conn <- harvestDBconnect()
+dbSendQuery(conn, "SET GLOBAL local_infile = true;")
+
+# database table object - represent as lasy table view that needs to be collected
+props.table <- tbl(conn, "props")
+# filtering the table and collecting the data
+yesterday.harvest <- props.table %>% 
+                        filter(date == yesterday.date.char) %>%
+                        collect()
+
+# filtering the box scores for the players of interest and selecting the stats
+updates <- boxscore.most.recent %>% 
+                select(athlete_id, ptsAct, rebAct, astAct, 
+                       stlAct, blkAct, fg3mAct, toAct, praAct, 
+                       prAct, paAct, raAct, sbAct) %>%
+                filter(athlete_id %in% yesterday.harvest$athlete_id)
+            
+# updating the data pulled from the database with the scores from the last game
+yesterday.harvest <- rows_update(yesterday.harvest, updates, by="athlete_id")
+
+# calculating over under winners with the stats 
+yesterday.harvest <- yesterday.harvest %>%
+    mutate(
+        ptsWin = ifelse(ptsAct > line_PTS, "o", "u"),
+        rebWin = ifelse(rebAct > line_REB, "o", "u"),
+        astWin = ifelse(astAct > line_AST, "o", "u"),
+        stlWin = ifelse(stlAct > line_STL, "o", "u"),
+        blkWin = ifelse(blkAct > line_BLK, "o", "u"),
+        fg3mWin = ifelse(fg3mAct > line_THREES, "o", "u"),
+        praWin = ifelse(praAct > line_PTSREBAST, "o", "u"),
+        prWin = ifelse(prAct > line_PTSREB, "o", "u"),
+        paWin = ifelse(paAct > line_PTSAST, "o", "u"),
+        raWin = ifelse(raAct > line_REBAST, "o", "u"),
+        sbWin = ifelse(sbAct > line_STLBLK, "o", "u")
+        )
+
+# sending the data back to the db for updating the table
+dbxUpdate(conn, "props", yesterday.harvest, where_cols = c("game_id", "athlete_id"))
+
+dbSendQuery(conn, "SET GLOBAL local_infile = false;")
+dbDisconnect(conn)
 #####
 
 # final data output
-write.csv(x = harvest,file =  harvest.file.path, row.names=FALSE)
+#write.csv(x = harvest,file =  harvest.file.path, row.names=FALSE)
+
 
 ###############################################
 # NEED TO ADD: 
-    #actual results to determine winners
+    # optimize updating lines for players who didn't have them on earlier runs
 ###############################################
 
 ##################
