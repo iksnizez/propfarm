@@ -11,6 +11,7 @@ library(zoo) # rolling averages
 #RETICULATE_PYTHON="../propfarmVenv/Scripts/python"
 #library(reticulate) # running python script to get the odds scrape
 source("scripts/functions/datacrackers.R")
+source("scripts/functions/dbhelpers.R")
 
 ##################
 # Setting variables and hitting api
@@ -115,8 +116,8 @@ back.to.back.last <- intersect(team.names.today, team.names.yesterday)
 matchups.today <- games.today %>% select(home_team_abb, away_team_abb)
 
 # pulling player stats
-harvest <- propfarming(boxscore.player, team.id.today, matchups.today)
-harvest$date <- search.date
+stat.harvest <- propfarming(boxscore.player, team.id.today, matchups.today)
+stat.harvest$date <- search.date
 #####
 
 ##################
@@ -128,8 +129,8 @@ betting.table <- read.csv(betting.file.path) %>%
 
 
 # store the players from the harvest data that did not have any betting info
-missing.players <- setdiff(harvest$athlete_display_name, betting.table$PLAYER)
-harvest <- merge(harvest, betting.table, 
+missing.players <- setdiff(stat.harvest$athlete_display_name, betting.table$PLAYER)
+harvest <- merge(stat.harvest, betting.table, 
                  by.x = "athlete_display_name",
                  by.y = "PLAYER"
                  ) %>%
@@ -176,9 +177,11 @@ opp.stats <- opp.stats.last.n.games(season=s,
                        num.game.lookback =15, 
                        box.scores=boxscore.player, 
                        schedule=schedule)
+
 # dropping the count columns and keeping the ranks
 opp.position.ranks <- opp.stats$team.opp.stats.by.pos %>%
                         select(team, athlete_position_abbreviation, contains("Rank"))
+
 # joining the ranks back to the player stat and prop harvest
 harvest <- harvest %>%
             inner_join(opp.position.ranks,
@@ -198,7 +201,7 @@ harvest <- harvest %>%
 ##################
 conn <- harvestDBconnect()
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
-dbWriteTable(conn, name = "props", value= harvest, row.names=FALSE, append = TRUE)
+#dbWriteTable(conn, name = "props", value= harvest, row.names=FALSE, append = TRUE)
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 
@@ -209,8 +212,10 @@ dbDisconnect(conn)
 # filtering to only the most recent games for the actual stats to add to
 # the most recent harvest and determine if over or under won
 # The boxscores game_date is actual date + 1, to pull yesterday = use today date
+# boxscores are not updated until late  night after all games complete
 boxscore.most.recent <- boxscore.player %>% 
-                            filter(game_date == search.date)
+                            filter(game_id %in% games.yesterday$game_id)
+
 
 # processing the box scores
 boxscore.most.recent <- boxscore.most.recent %>%
@@ -225,7 +230,8 @@ boxscore.most.recent <- boxscore.most.recent %>%
              fg3mAct = fg3m,
              toAct = to)
            ) %>%
-    mutate(athlete_id = as.integer(athlete_id),
+    mutate(athlete_id = as.numeric(athlete_id),
+           minAct = as.integer(minAct),       
            ptsAct = as.integer(ptsAct),
            rebAct = as.integer(rebAct),
            astAct = as.integer(astAct),
@@ -248,16 +254,20 @@ dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 props.table <- tbl(conn, "props")
 # filtering the table and collecting the data
 yesterday.harvest <- props.table %>% 
-                        filter(date == yesterday.date.char) %>%
+                        filter(game_id %in% games.yesterday$game_id) %>%
                         collect()
 
 # filtering the box scores for the players of interest and selecting the stats
 updates <- boxscore.most.recent %>% 
-                select(athlete_id, ptsAct, rebAct, astAct, 
+                select(athlete_id, minAct, ptsAct, rebAct, astAct, 
                        stlAct, blkAct, fg3mAct, toAct, praAct, 
                        prAct, paAct, raAct, sbAct) %>%
                 filter(athlete_id %in% yesterday.harvest$athlete_id)
-            
+
+# players who were in the harvest data but did not show up in the boxscore
+missing.boxscores <- setdiff(yesterday.harvest$athlete_id %>% unique(),boxscore.most.recent$athlete_id %>% unique())
+missing.players <- harvest %>% filter(athlete_id %in% missing.boxscores) %>% select(player, athlete_id)
+        
 # updating the data pulled from the database with the scores from the last game
 yesterday.harvest <- rows_update(yesterday.harvest, updates, by="athlete_id")
 
@@ -278,7 +288,7 @@ yesterday.harvest <- yesterday.harvest %>%
         )
 
 # sending the data back to the db for updating the table
-dbxUpdate(conn, "props", yesterday.harvest, where_cols = c("game_id", "athlete_id"))
+dbxUpdate(conn, "props", yesterday.harvest, where_cols = c("game_id", "athlete_id", "date"))
 
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
@@ -291,6 +301,8 @@ dbDisconnect(conn)
 ###############################################
 # NEED TO ADD: 
     # optimize updating lines for players who didn't have them on earlier runs
+    # add functionality to pass box scores and schedule object to missing player function
+    #add functionality to sub in stats for a player from the missing lpayer function
 ###############################################
 
 ##################
