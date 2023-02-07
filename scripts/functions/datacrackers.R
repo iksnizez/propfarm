@@ -597,10 +597,10 @@ player.missed.games.stats <- function(team_abb, missed_player_names, stats_playe
     # 2)boxscores from missed games for POI, 3) avgs from missed games for POI
     # 4) box scores from games missing players active, 5) avgs for active
     # games for POI, 6) different in missing/active avgs
-    return(list(missed.games, 
-                box.games.missed, avgs.missing, 
-                box.games.active, avgs.active, 
-                avg.change))
+    return(list("missed.games"=missed.games, 
+                "box.scores.missed"=box.games.missed, "avg.missed"=avgs.missing, 
+                "box.scores.active"=box.games.active, "avg.active"=avgs.active, 
+                "avg.change"=avg.change))
 }
 
 #####

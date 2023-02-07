@@ -13,6 +13,9 @@ library(zoo) # rolling averages
 source("scripts/functions/datacrackers.R")
 source("scripts/functions/dbhelpers.R")
 
+# full player info history
+#hoopR::nba_commonallplayers(season="2022-23")
+
 ##################
 # Setting variables and hitting api
 ##################
@@ -124,12 +127,13 @@ stat.harvest <- propfarming(boxscore.player, team.id.today, matchups.today.full)
 #addding date
 stat.harvest$date <- search.date
 # creating name column without suffixes to join with betting data until ID list is compiled
-suffix.rep <- c(" Jr."="", " Sr."="", " III"="", " IV"="", " II"="")
+suffix.rep <- c(" Jr."="", " Sr."="", " III"="", " IV"="", " II"="", 
+                "\\."="", "'"="", "'"="")
 # updating generic positions with 1 of 5
 pos.rep <- c("^G"="SG", "^F"="PF")
 stat.harvest <- stat.harvest %>%
                     mutate(
-                        join.names = stringr::str_replace_all(athlete_display_name, suffix.rep),
+                        join.names = tolower(stringr::str_replace_all(athlete_display_name, suffix.rep)),
                         athlete_position_abbreviation = stringr::str_replace_all(
                                                                     athlete_position_abbreviation,
                                                                     pos.rep)
@@ -141,12 +145,13 @@ stat.harvest <- stat.harvest %>%
 ##################
 betting.table <- read.csv(betting.file.path) %>%
                     pivot_wider(names_from = stat,
-                                values_from = c(line, oOdds, uOdds))
+                                values_from = c(line, oOdds, uOdds)) %>%
+                    mutate(
+                        PLAYER= tolower(stringr::str_replace_all(PLAYER, suffix.rep))
+                    )
 
 # store the players from the harvest data that did not have any betting info
 missing.players <- setdiff(stat.harvest$athlete_display_name, betting.table$PLAYER)
-#harvest <- merge(stat.harvest, betting.table, by.x = "athlete_display_name", by.y = "PLAYER"  ) %>% 
-#                select(-team, -date.y) %>% rename(c(date = date.x))
 
 #right join with betting table on the right so that only players with lines/odds are kept
 harvest <- right_join(stat.harvest, 
@@ -275,7 +280,7 @@ props.table <- tbl(conn, "props")
 # filtering the table and collecting the data
 yest <- as.numeric(games.yesterday$game_id)
 yesterday.harvest <- props.table %>% 
-                        #filter(game_id %in% yest) %>%
+                        filter(game_id %in% yest) %>%
                         collect()
 
 # filtering the box scores for the players of interest and selecting the stats
