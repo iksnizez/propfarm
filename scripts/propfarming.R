@@ -97,27 +97,43 @@ team.records %>% arrange(team) %>% select(team, wATS, lATS, tATS)
 ##################
 #grab the teams playing today, tomorrow and yesterday
 team.names.today <-  unique(c(games.today$away_team_abb, games.today$home_team_abb))
-team.names.yesterday <-  unique(c(games.yesterday$away_team_abb, games.yesterday$home_team_abb))
-team.names.tomorrow <-  unique(c(games.tomorrow$away_team_abb, games.tomorrow$home_team_abb))
 team.id.today <- unique(c(games.today$home_team_id, games.today$away_team_id))
-team.id.yesterday <- unique(c(games.yesterday$home_team_id, games.today$away_team_id))
-team.id.tomorrow <- unique(c(games.tomorrow$home_team_id, games.today$away_team_id))
+
+team.names.yesterday <-  unique(c(games.yesterday$away_team_abb, games.yesterday$home_team_abb))
+team.id.yesterday <- unique(c(games.yesterday$home_team_id, games.yesterday$away_team_id))
+
+team.names.tomorrow <-  unique(c(games.tomorrow$away_team_abb, games.tomorrow$home_team_abb))
+team.id.tomorrow <- unique(c(games.tomorrow$home_team_id, games.tomorrow$away_team_id))
 
 # grabbing the gameIds for today
 gids.today <- unique(games.today$game_id)
 
 #creating team list for front- and backend back-to-backs
-back.to.back.first.id <- intersect(team.id.today, team.id.yesterday)
-back.to.back.last.id <- intersect(team.id.today, team.id.tomorrow)
+back.to.back.first.id <- intersect(team.id.today, team.id.tomorrow)
 back.to.back.first <- intersect(team.names.today, team.names.tomorrow)
+
+back.to.back.last.id <- intersect(team.id.today, team.id.yesterday)
 back.to.back.last <- intersect(team.names.today, team.names.yesterday)
 
 #creating matchup lookup
 matchups.today <- games.today %>% select(home_team_abb, away_team_abb)
+matchups.today.full <- games.today %>% select(home_team_abb, away_team_abb, game_id)
 
 # pulling player stats
-stat.harvest <- propfarming(boxscore.player, team.id.today, matchups.today)
+stat.harvest <- propfarming(boxscore.player, team.id.today, matchups.today.full) %>% ungroup()
+#addding date
 stat.harvest$date <- search.date
+# creating name column without suffixes to join with betting data until ID list is compiled
+suffix.rep <- c(" Jr."="", " Sr."="", " III"="", " IV"="", " II"="")
+# updating generic positions with 1 of 5
+pos.rep <- c("^G"="SG", "^F"="PF")
+stat.harvest <- stat.harvest %>%
+                    mutate(
+                        join.names = stringr::str_replace_all(athlete_display_name, suffix.rep),
+                        athlete_position_abbreviation = stringr::str_replace_all(
+                                                                    athlete_position_abbreviation,
+                                                                    pos.rep)
+                    )
 #####
 
 ##################
@@ -127,15 +143,18 @@ betting.table <- read.csv(betting.file.path) %>%
                     pivot_wider(names_from = stat,
                                 values_from = c(line, oOdds, uOdds))
 
-
 # store the players from the harvest data that did not have any betting info
 missing.players <- setdiff(stat.harvest$athlete_display_name, betting.table$PLAYER)
-harvest <- merge(stat.harvest, betting.table, 
-                 by.x = "athlete_display_name",
-                 by.y = "PLAYER"
-                 ) %>%
-            select(-team, -date.y) %>%
-            rename(c(date = date.x))
+#harvest <- merge(stat.harvest, betting.table, by.x = "athlete_display_name", by.y = "PLAYER"  ) %>% 
+#                select(-team, -date.y) %>% rename(c(date = date.x))
+
+#right join with betting table on the right so that only players with lines/odds are kept
+harvest <- right_join(stat.harvest, 
+                      betting.table, 
+                      by=c("join.names" = "PLAYER")) %>%
+                select(-team, -date.y, -join.names) %>%
+                rename(c(date = date.x))
+
 #####
 
 ##################
@@ -185,7 +204,7 @@ opp.position.ranks <- opp.stats$team.opp.stats.by.pos %>%
 # joining the ranks back to the player stat and prop harvest
 harvest <- harvest %>%
             inner_join(opp.position.ranks,
-                       by=c('team_abbreviation'='team', 
+                       by=c('opp'='team', 
                             'athlete_position_abbreviation'='athlete_position_abbreviation')
                        )
 #renaming columns
@@ -193,7 +212,7 @@ harvest <- harvest %>%
     rename(c(team = team_abbreviation,
              player = athlete_display_name,
              pos = athlete_position_abbreviation)
-           )
+           ) 
 #####
 
 ##################
@@ -201,7 +220,8 @@ harvest <- harvest %>%
 ##################
 conn <- harvestDBconnect()
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
-#dbWriteTable(conn, name = "props", value= harvest, row.names=FALSE, append = TRUE)
+dbWriteTable(conn, name = "props", value= harvest, row.names = FALSE, overwrite = FALSE, append = TRUE)
+#dbx::dbxInsert(conn=conn, table="props", records = harvest)
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 
@@ -253,8 +273,9 @@ dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 # database table object - represent as lasy table view that needs to be collected
 props.table <- tbl(conn, "props")
 # filtering the table and collecting the data
+yest <- as.numeric(games.yesterday$game_id)
 yesterday.harvest <- props.table %>% 
-                        filter(game_id %in% games.yesterday$game_id) %>%
+                        #filter(game_id %in% yest) %>%
                         collect()
 
 # filtering the box scores for the players of interest and selecting the stats
@@ -270,6 +291,7 @@ missing.players <- harvest %>% filter(athlete_id %in% missing.boxscores) %>% sel
         
 # updating the data pulled from the database with the scores from the last game
 yesterday.harvest <- rows_update(yesterday.harvest, updates, by="athlete_id")
+
 
 # calculating over under winners with the stats 
 yesterday.harvest <- yesterday.harvest %>%
@@ -288,14 +310,15 @@ yesterday.harvest <- yesterday.harvest %>%
         )
 
 # sending the data back to the db for updating the table
-dbxUpdate(conn, "props", yesterday.harvest, where_cols = c("game_id", "athlete_id", "date"))
+dbx::dbxUpdate(conn, "props", yesterday.harvest, where_cols = c("game_id", "athlete_id", "date"))
 
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 #####
 
 # final data output
-#write.csv(x = harvest,file =  harvest.file.path, row.names=FALSE)
+#write.csv(x = stat.harvest,file =  harvest.file.path, row.names=FALSE)
+#write.csv(x = yesterday.harvest,file =  "output/dbBackup.csv", row.names=FALSE)
 
 
 ###############################################

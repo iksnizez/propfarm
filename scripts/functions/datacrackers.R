@@ -121,9 +121,9 @@ synth.avg <- function(season_avg, n_avg, n_games=3, games_played){
     n.avg.wt <- (min(1-(n_games / games_played), 0.6))
     season.avg.wt <- (1 - n.avg.wt)
     # calculating the wt. synthetic avg
-    sythetic.avg <- round((n_avg * n.avg.wt) + (season_avg * season.avg.wt),2)
+    synthetic.avg <- round((n_avg * n.avg.wt) + (season_avg * season.avg.wt), 2)
     
-    return(sythetic.avg)
+    return(synthetic.avg)
 }
 #####
 
@@ -264,7 +264,7 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
     df <- merge(df, players.today.l10.avgs, by = "athlete_id")
     #adding the player name back to the data
     df <- merge(players.today %>% 
-                    select(athlete_id, athlete_display_name, athlete_position_abbreviation, team_abbreviation, game_id) %>% 
+                    select(athlete_id, athlete_display_name, athlete_position_abbreviation, team_abbreviation) %>% 
                     group_by(athlete_id)%>%
                     filter(row_number()==1), 
                 df, 
@@ -278,7 +278,12 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
     df <- df %>%
         filter(minAvgL10 >= 20) %>%
         rowwise() %>%
-        mutate(btb = case_when((team_abbreviation %in% back.to.back.first) ~ 1,
+        mutate(game_id = ifelse(
+                            team_abbreviation %in% matchups.today$home_team_abb, 
+                            matchups.today[matchups.today$home_team_abb == team_abbreviation, "game_id"][[1]],
+                            matchups.today[matchups.today$away_team_abb == team_abbreviation, "game_id"][[1]]
+                        ),
+               btb = case_when((team_abbreviation %in% back.to.back.first) ~ 1,
                                (team_abbreviation %in% back.to.back.last) ~ 2,
                                TRUE ~ 0
                      ),
