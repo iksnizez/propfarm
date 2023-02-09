@@ -151,7 +151,7 @@ betting.table <- read.csv(betting.file.path) %>%
                     )
 
 # store the players from the harvest data that did not have any betting info
-missing.players <- setdiff(stat.harvest$athlete_display_name, betting.table$PLAYER)
+missing.players <- setdiff(stat.harvest$join.names, betting.table$PLAYER)
 
 #right join with betting table on the right so that only players with lines/odds are kept
 harvest <- right_join(stat.harvest, 

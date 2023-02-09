@@ -437,7 +437,7 @@ opp.stats.last.n.games  <- function(season, num.game.lookback=15, box.scores=NUL
             ptsCount = sum(ptsCount)
         )
     
-    # creates dataframes for each position with ranks for each stat
+    # creates dataframes for each position to easily create ranks for each  position and stat
     positions <- c("PG", "SG", "SF", "PF", "C")
     for(pos in positions){
         var.name <- pos
@@ -467,8 +467,11 @@ opp.stats.last.n.games  <- function(season, num.game.lookback=15, box.scores=NUL
     position.ranks <- rbind(position.ranks, PF)
     position.ranks <- rbind(position.ranks, C)
     
+    # game.opp.stats.by.pos is game level agg stats given up for each team
+    # team.opp.stats.by.pos is team level agg stats given up for each team over n games for main 5 positions + RANKS for them
+    # test is same as team.opp.stats.by.pos but includes generic G and F positions and NO ranks
     output <- list(grouped, position.ranks, stats.team.opp.total)
-    names(output) <- c("game.opp.stats.by.pos", "team.opp.stats.by.pos", "test")
+    names(output) <- c("game.opp.stats.by.pos", "team.opp.stats.by.pos", "team.opp.stats.by.all.pos")
     
     return(output)
 }
@@ -492,7 +495,7 @@ player.box.score.avgs <- function(box_scores, game_ids, stats_player_name){
     
     avgs <-   box_scores %>%  
         group_by(athlete_display_name) %>%
-        summarize(
+        summarize(gp=n(),
             minAvg = mean(as.numeric(min), na.rm = TRUE),
             fgmAvg = mean(as.numeric(fgm), na.rm = TRUE),
             fgaAvg = mean(as.numeric(fga), na.rm = TRUE),
@@ -518,7 +521,8 @@ player.box.score.avgs <- function(box_scores, game_ids, stats_player_name){
 ###############
 # retrieving a player's missed games and calculating player avg for those games
 ###############
-player.missed.games.stats <- function(team_abb, missed_player_names, stats_player_name, season){
+player.missed.games.stats <- function(team_abb, missed_player_names, stats_player_name, 
+                                      box_scores=NULL, schedule=NULL, season){
     ## ingest team, names of players who you want to see missed games for,
     ## the name of a single player you want to see how they performed with the other
     ## players missing and season
@@ -527,8 +531,15 @@ player.missed.games.stats <- function(team_abb, missed_player_names, stats_playe
     ## the the avg stats for those games
     ## comparison of the stats in the games the players missed vs the games present
     
-    # grab season schedule
-    sched <- hoopR::load_nba_schedule(seasons = season)
+    # grab season schedule if not provided
+    if(is.null(schedule)){
+        schedule <- hoopR::load_nba_schedule(seasons = season)
+    }
+    
+    # grab box scores if not provided
+    if(is.null(box_scores)){
+        box_scores <- hoopR::load_nba_player_box(seasons = season)
+    }
     
     #convert text inputs to lower case for better filtering
     team_abb <- tolower(team_abb)
@@ -536,7 +547,7 @@ player.missed.games.stats <- function(team_abb, missed_player_names, stats_playe
     stats_player_name <- tolower(stats_player_name)
     
     # return the team's completed games for the season
-    games.team <- sched %>%
+    games.team <- schedule %>%
         mutate(home_abbreviation = tolower(home_abbreviation),
                away_abbreviation = tolower(away_abbreviation)
         ) %>%
@@ -545,16 +556,13 @@ player.missed.games.stats <- function(team_abb, missed_player_names, stats_playe
         )%>%
         select(id)
     
-    # retrieve all individual boxscores for the season
-    box.scores <- hoopR::load_nba_player_box(seasons = season)
-    
     # this will hold the  games played for the player(s) we are interest in their misses
     games.played <- c()
     
     # looping through each player to return their missed game ids
     for (player in missed_player_names){
         #filtering box scores to the player of interest
-        games.player <- box.scores %>%
+        games.player <- box_scores %>%
             mutate(athlete_display_name = tolower(athlete_display_name)) %>%
             filter(athlete_display_name == player) %>%
             select(game_id)
@@ -575,12 +583,12 @@ player.missed.games.stats <- function(team_abb, missed_player_names, stats_playe
     else{
 
         #player avgs after filtering for games and POI
-        missing <- player.box.score.avgs(box.scores, missed.games, stats_player_name)
+        missing <- player.box.score.avgs(box_scores, missed.games, stats_player_name)
         avgs.missing <- missing[[2]]
         box.games.missed <- missing[[1]]
         
         # gathering the stat players season avgs
-        active <- player.box.score.avgs(box.scores, games.played, stats_player_name)
+        active <- player.box.score.avgs(box_scores, games.played, stats_player_name)
         avgs.active <- active[[2]]
         box.games.active <- active[[1]]
         
