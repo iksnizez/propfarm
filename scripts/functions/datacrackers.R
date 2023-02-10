@@ -313,6 +313,52 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
 #####
 
 ####################
+# SPLIT AND SUM BOX SCORES
+####################
+split.sum.box.scores <- function(box.scores, gids, t= NULL, min = 0){
+    
+    split.summed <- box.scores %>%
+        filter(game_id %in% gids,
+               team_abbreviation != t,
+               min > 0) %>% 
+        tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
+        tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
+        tidyr::separate(ft, sep = "-", into = c("ftm","fta")) %>%
+        mutate(
+            athlete_position_abbreviation = case_when(
+                (runif(1) < 0.50 & athlete_position_abbreviation == "G") ~ "PG",
+                (runif(1) < 10 & athlete_position_abbreviation == "G") ~ "SG",
+                (runif(1) < 0.334 & athlete_position_abbreviation == "F") ~ "SF",
+                (runif(1) < 0.667 & athlete_position_abbreviation == "F") ~ "PF",
+                (runif(1) <= 10 & athlete_position_abbreviation == "F") ~ "C",
+                TRUE ~ athlete_position_abbreviation
+            )
+        ) %>%
+        group_by(game_id, team_abbreviation, athlete_position_abbreviation) %>%
+        summarize(fgmCount = sum(as.numeric(fgm)),
+                  fgaCount = sum(as.numeric(fga)),
+                  fg3mCount = sum(as.numeric(fg3m)),
+                  fg3aCount = sum(as.numeric(fg3a)),
+                  ftmCount = sum(as.numeric(ftm)),
+                  ftaCount = sum(as.numeric(fta)),
+                  orebCount = sum(as.numeric(oreb)),
+                  drebCount = sum(as.numeric(dreb)),
+                  rebCount = sum(as.numeric(reb)),
+                  astCount = sum(as.numeric(ast)),
+                  stlCount = sum(as.numeric(stl)),
+                  blkCount = sum(as.numeric(blk)),
+                  toCount = sum(as.numeric(to)),
+                  pfCount = sum(as.numeric(pf)),
+                  ptsCount = sum(as.numeric(pts)),
+        )%>%
+        mutate(team= t)
+    
+    return(split.summed)
+}
+
+#####
+
+####################
 ## FUNCTION TO RETRIEVE TEAM OPPONENT RANKS FROM LAST N games
 ####################
 opp.stats.last.n.games  <- function(season, num.game.lookback=15, box.scores=NULL, schedule=NULL){
@@ -355,66 +401,27 @@ opp.stats.last.n.games  <- function(season, num.game.lookback=15, box.scores=NUL
         
         if(t == teams[1]){
             #retrieve gid boxscores and split att/made, aggregating stats by team, position
-            grouped <- box.scores %>%
-                filter(game_id %in% gids,
-                       team_abbreviation != t,
-                       min > 0) %>% 
-                tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
-                tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
-                tidyr::separate(ft, sep = "-", into = c("ftm","fta")) %>%
-                group_by(game_id, team_abbreviation, athlete_position_abbreviation) %>%
-                summarize(fgmCount = sum(as.numeric(fgm)),
-                          fgaCount = sum(as.numeric(fga)),
-                          fg3mCount = sum(as.numeric(fg3m)),
-                          fg3aCount = sum(as.numeric(fg3a)),
-                          ftmCount = sum(as.numeric(ftm)),
-                          ftaCount = sum(as.numeric(fta)),
-                          orebCount = sum(as.numeric(oreb)),
-                          drebCount = sum(as.numeric(dreb)),
-                          rebCount = sum(as.numeric(reb)),
-                          astCount = sum(as.numeric(ast)),
-                          stlCount = sum(as.numeric(stl)),
-                          blkCount = sum(as.numeric(blk)),
-                          toCount = sum(as.numeric(to)),
-                          pfCount = sum(as.numeric(pf)),
-                          ptsCount = sum(as.numeric(pts)),
-                ) %>%
-                mutate(team= t)
+            grouped <- split.sum.box.scores(box.scores, gids, t=t, min=0)
         }
         else{
             #retrieve gid boxscores and split att/made, aggregating stats by team, position
-            temp <- box.scores %>%
-                filter(game_id %in% gids,
-                       team_abbreviation != t,
-                       min > 0) %>% 
-                tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
-                tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
-                tidyr::separate(ft, sep = "-", into = c("ftm","fta")) %>%
-                group_by(game_id, team_abbreviation, athlete_position_abbreviation) %>%
-                summarize(fgmCount = sum(as.numeric(fgm)),
-                          fgaCount = sum(as.numeric(fga)),
-                          fg3mCount = sum(as.numeric(fg3m)),
-                          fg3aCount = sum(as.numeric(fg3a)),
-                          ftmCount = sum(as.numeric(ftm)),
-                          ftaCount = sum(as.numeric(fta)),
-                          orebCount = sum(as.numeric(oreb)),
-                          drebCount = sum(as.numeric(dreb)),
-                          rebCount = sum(as.numeric(reb)),
-                          astCount = sum(as.numeric(ast)),
-                          stlCount = sum(as.numeric(stl)),
-                          blkCount = sum(as.numeric(blk)),
-                          toCount = sum(as.numeric(to)),
-                          pfCount = sum(as.numeric(pf)),
-                          ptsCount = sum(as.numeric(pts)),
-                )%>%
-                mutate(team= t)
-            
+            temp <- split.sum.box.scores(box.scores, gids, t=t, min=0)
             grouped <- rbind(grouped, temp)
         }
     }
     
     # groups the agg stats by team for totals over n games
     stats.team.opp.total <- grouped %>%
+        mutate(
+            athlete_position_abbreviation = case_when(
+                (runif(1) < 0.50 & athlete_position_abbreviation == "G") ~ "PG",
+                (runif(1) >= 0.50 & athlete_position_abbreviation == "G") ~ "SG",
+                (runif(1) < 0.334 & athlete_position_abbreviation == "F") ~ "SF",
+                (runif(1) < 0.667 & athlete_position_abbreviation == "F") ~ "PF",
+                (runif(1) <= 1 & athlete_position_abbreviation == "F") ~ "C",
+                TRUE ~ athlete_position_abbreviation
+            )
+        ) %>%
         group_by(
             team, 
             athlete_position_abbreviation
