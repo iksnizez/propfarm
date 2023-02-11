@@ -324,16 +324,6 @@ split.sum.box.scores <- function(box.scores, gids, t= NULL, min = 0){
         tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
         tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
         tidyr::separate(ft, sep = "-", into = c("ftm","fta")) %>%
-        mutate(
-            athlete_position_abbreviation = case_when(
-                (runif(1) < 0.50 & athlete_position_abbreviation == "G") ~ "PG",
-                (runif(1) < 10 & athlete_position_abbreviation == "G") ~ "SG",
-                (runif(1) < 0.334 & athlete_position_abbreviation == "F") ~ "SF",
-                (runif(1) < 0.667 & athlete_position_abbreviation == "F") ~ "PF",
-                (runif(1) <= 10 & athlete_position_abbreviation == "F") ~ "C",
-                TRUE ~ athlete_position_abbreviation
-            )
-        ) %>%
         group_by(game_id, team_abbreviation, athlete_position_abbreviation) %>%
         summarize(fgmCount = sum(as.numeric(fgm)),
                   fgaCount = sum(as.numeric(fga)),
@@ -412,16 +402,6 @@ opp.stats.last.n.games  <- function(season, num.game.lookback=15, box.scores=NUL
     
     # groups the agg stats by team for totals over n games
     stats.team.opp.total <- grouped %>%
-        mutate(
-            athlete_position_abbreviation = case_when(
-                (runif(1) < 0.50 & athlete_position_abbreviation == "G") ~ "PG",
-                (runif(1) >= 0.50 & athlete_position_abbreviation == "G") ~ "SG",
-                (runif(1) < 0.334 & athlete_position_abbreviation == "F") ~ "SF",
-                (runif(1) < 0.667 & athlete_position_abbreviation == "F") ~ "PF",
-                (runif(1) <= 1 & athlete_position_abbreviation == "F") ~ "C",
-                TRUE ~ athlete_position_abbreviation
-            )
-        ) %>%
         group_by(
             team, 
             athlete_position_abbreviation
@@ -486,7 +466,7 @@ opp.stats.last.n.games  <- function(season, num.game.lookback=15, box.scores=NUL
 #####
 
 ####################
-## FUNCTION TO RETRIEVE TEAM OPPONENT RANKS FROM LAST N games
+## RETURN A PLAYER'S BOXSCORES AND AVGS  FOR SPECIFIC GAMES
 ####################
 player.box.score.avgs <- function(box_scores, game_ids, stats_player_name){
     
