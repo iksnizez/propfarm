@@ -130,14 +130,22 @@ stat.harvest$date <- search.date
 suffix.rep <- c(" Jr."="", " Sr."="", " III"="", " IV"="", " II"="", 
                 "\\."="", "'"="", "'"="")
 # updating generic positions with 1 of 5
-pos.rep <- c("^G"="SG", "^F"="PF")
+##pos.rep <- c("^G"="SG", "^F"="PF")
 stat.harvest <- stat.harvest %>%
                     mutate(
                         join.names = tolower(stringr::str_replace_all(athlete_display_name, suffix.rep)),
-                        athlete_position_abbreviation = stringr::str_replace_all(
-                                                                    athlete_position_abbreviation,
-                                                                    pos.rep)
+                        #athlete_position_abbreviation = stringr::str_replace_all(
+                        #                                            athlete_position_abbreviation,
+                        #                                            pos.rep)
                     )
+
+# flag players who have seen large jump in minutes
+minutes.boosted <- stat.harvest %>% 
+                        mutate(minL3diff = minAvgL3 - minAvg - (minstd * 1.2),
+                               minL10diff = minAvgL10 - minAvg - minstd) %>%
+                        filter(minL3diff > 0 | minL10diff > 0) %>%
+                        select(athlete_id, athlete_display_name, athlete_position_abbreviation, team_abbreviation, minL3diff, minL10diff)
+
 #####
 
 ##################
@@ -173,10 +181,10 @@ harvest <- harvest %>%
                 rebUscore = line_REB - (rebSynth + rebStdL3),
                 astOscore = (astSynth - astStdL3) - line_AST,
                 astUscore = line_AST - (astSynth + astStdL3),
-                stlOscore = (stlSynth - stlStdL3) - line_STL,
-                stlUscore = line_STL - (stlSynth + stlStdL3),
-                blkOscore = (blkSynth - blkStdL3) - line_BLK,
-                blkUscore = line_BLK - (blkSynth + blkStdL3),
+                #stlOscore = (stlSynth - stlStdL3) - line_STL,
+                #stlUscore = line_STL - (stlSynth + stlStdL3),
+                #blkOscore = (blkSynth - blkStdL3) - line_BLK,
+                #blkUscore = line_BLK - (blkSynth + blkStdL3),
                 fg3mOscore = (fg3mSynth - fg3mStdL3) - line_THREES,
                 fg3mUscore = line_THREES - (fg3mSynth + fg3mStdL3),
                 praOscore = (praSynth - praStdL3) - line_PTSREBAST,
