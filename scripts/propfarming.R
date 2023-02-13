@@ -142,9 +142,19 @@ stat.harvest <- stat.harvest %>%
 # flag players who have seen large jump in minutes
 minutes.boosted <- stat.harvest %>% 
                         mutate(minL3diff = minAvgL3 - minAvg - (minstd * 1.2),
-                               minL10diff = minAvgL10 - minAvg - minstd) %>%
+                               minL10diff = minAvgL10 - minAvg - minstd,
+                               direction =case_when(
+                                   (minL3diff > 0 & minL10diff > 0) ~ "up-ramped",
+                                   (minL3diff > 0 & minL10diff < 0) ~ "up-ramping",
+                                   (minL3diff < 0 & minL10diff > 0) ~ "down-ramping",
+                                   (minL3diff < 0 & minL10diff < 0) ~ "down-ramped",
+                                   TRUE ~ "flat"
+                            )) %>%
                         filter(minL3diff > 0 | minL10diff > 0) %>%
-                        select(athlete_id, athlete_display_name, athlete_position_abbreviation, team_abbreviation, minL3diff, minL10diff)
+                        select(athlete_id, athlete_display_name, athlete_position_abbreviation, team_abbreviation, 
+                               direction, minAvg,minAvgL3, minstd, minAvgL10, minL3diff, minL10diff) %>%
+                        arrange(direction)
+minutes.boosted
 
 #####
 
@@ -160,7 +170,7 @@ betting.table <- read.csv(betting.file.path) %>%
 
 # store the players from the harvest data that did not have any betting info
 missing.players <- setdiff(stat.harvest$join.names, betting.table$PLAYER)
-
+missing.players
 #right join with betting table on the right so that only players with lines/odds are kept
 harvest <- right_join(stat.harvest, 
                       betting.table, 
@@ -301,7 +311,7 @@ updates <- boxscore.most.recent %>%
 # players who were in the harvest data but did not show up in the boxscore
 missing.boxscores <- setdiff(yesterday.harvest$athlete_id %>% unique(),boxscore.most.recent$athlete_id %>% unique())
 missing.players <- harvest %>% filter(athlete_id %in% missing.boxscores) %>% select(player, athlete_id)
-        
+missing.players     
 # updating the data pulled from the database with the scores from the last game
 yesterday.harvest <- rows_update(yesterday.harvest, updates, by="athlete_id")
 
@@ -334,12 +344,10 @@ dbDisconnect(conn)
 #write.csv(x = yesterday.harvest,file =  "output/dbBackup.csv", row.names=FALSE)
 
 
-###############################################
-# NEED TO ADD: 
-    # optimize updating lines for players who didn't have them on earlier runs
-    # add functionality to pass box scores and schedule object to missing player function
-    #add functionality to sub in stats for a player from the missing lpayer function
-###############################################
+##################
+#
+##################
+#####
 
 ##################
 # 
