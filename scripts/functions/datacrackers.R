@@ -600,5 +600,33 @@ player.missed.games.stats <- function(team_abb, missed_player_names, stats_playe
 
 #####
 
-
+###############
+# build dataframe for betting info from list of gids
+###############
+games.betting.info <- function(gids){
+    # ingest a df that contains game ids in col = "game_id"
+    # output dataframe with the betting info added
+    
+    for(i in 1:length(gids)){
+        gid <- as.numeric(gids[i])
+        if(i ==1){
+            betting.info.game <- espn_nba_betting(gid)$pickcenter %>%
+                filter(provider_name == "consensus") %>%
+                select(over_under, spread) %>%
+                rename(c(overUnder = over_under)) %>%
+                mutate(game_id = gid)
+        }
+        else{
+            temp <- espn_nba_betting(gid)$pickcenter %>%
+                filter(provider_name == "consensus") %>%
+                select(over_under, spread) %>%
+                rename(c(overUnder = over_under)) %>%
+                mutate(game_id = gid)
+            
+            betting.info.game <- rbind(betting.info.game, temp)
+        }
+    }
+    return(betting.info.game)
+}
+#####
 

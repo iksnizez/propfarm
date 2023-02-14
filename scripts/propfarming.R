@@ -152,7 +152,7 @@ minutes.boosted <- stat.harvest %>%
                             )) %>%
                         filter(minL3diff > 0 | minL10diff > 0) %>%
                         select(athlete_id, athlete_display_name, athlete_position_abbreviation, team_abbreviation, 
-                               direction, minAvg,minAvgL3, minstd, minAvgL10, minL3diff, minL10diff) %>%
+                               direction, minAvg,minAvgL3, minAvgL10, minstd, minL3diff, minL10diff) %>%
                         arrange(direction)
 minutes.boosted
 
@@ -207,7 +207,8 @@ harvest <- harvest %>%
                 raUscore = line_REBAST - (raSynth + raStdL3),
                 #sbOscore = (sbSynth - sbStdL3) - line_STLBLK,
                 #sbsUscore = line_STLBLK - (sbSynth + sbStdL3),
-                date = as.Date(date, format="%Y-%m-%d")
+                date = as.Date(date, format="%Y-%m-%d"),
+                game_id = as.numeric(game_id)
             )
 #####
 
@@ -236,6 +237,14 @@ harvest <- harvest %>%
              player = athlete_display_name,
              pos = athlete_position_abbreviation)
            ) 
+#####
+
+##################
+# adding game over/under and spread to the harvest
+##################
+game.lines.today <- games.betting.info(gids.today)
+harvest <- harvest %>% left_join(game.lines.today, by="game_id")
+
 #####
 
 ##################
