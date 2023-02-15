@@ -135,10 +135,16 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
     # ingest season boxscore data from load_nba_player_box and vector of team ids and dataframe of home/away teams
     # output filtered list of players and their prop farm stat data for today
     
+    #convert team ids to player ids in order to filter box scores
+    # using team ids doesn't capture player data when they have been traded midseason
+    all.pids <- box.score.data %>% 
+        filter(team_id %in% team.ids)
+    pids <- unique(c(all.pids$athlete_id))
+
     players.today <- box.score.data %>% 
-        filter(team_id %in% team.ids) %>% 
-        arrange(team_id, athlete_id, desc(game_date))
-    
+        filter(athlete_id %in% pids) %>% 
+        arrange(athlete_id, team_id,  desc(game_date))
+    print(players.today)
     # breaking the shooting attempts from makes and converting to numbers
     players.today <-  players.today %>%
         tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
@@ -262,6 +268,7 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
     #merging the season avg data with the last 3 avg data and last 10 avg
     df <- merge(players.today.season.avgs, players.today.l3.avgs, by = "athlete_id")
     df <- merge(df, players.today.l10.avgs, by = "athlete_id")
+      
     #adding the player name back to the data
     df <- merge(players.today %>% 
                     select(athlete_id, athlete_display_name, athlete_position_abbreviation, team_abbreviation) %>% 
@@ -310,6 +317,10 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
     
     return(df)    
 }
+
+stat.harvest2 <- propfarming(boxscore.player, team.id.today, matchups.today.full) %>% ungroup()
+View(stat.harvest2)
+
 #####
 
 ####################

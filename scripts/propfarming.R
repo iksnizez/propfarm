@@ -154,7 +154,7 @@ minutes.boosted <- stat.harvest %>%
                         select(athlete_id, athlete_display_name, athlete_position_abbreviation, team_abbreviation, 
                                direction, minAvg,minAvgL3, minAvgL10, minstd, minL3diff, minL10diff) %>%
                         arrange(direction)
-minutes.boosted
+View(minutes.boosted)
 
 #####
 
