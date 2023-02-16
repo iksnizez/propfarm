@@ -144,7 +144,7 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
     players.today <- box.score.data %>% 
         filter(athlete_id %in% pids) %>% 
         arrange(athlete_id, team_id,  desc(game_date))
-    print(players.today)
+
     # breaking the shooting attempts from makes and converting to numbers
     players.today <-  players.today %>%
         tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
@@ -317,9 +317,6 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
     
     return(df)    
 }
-
-stat.harvest2 <- propfarming(boxscore.player, team.id.today, matchups.today.full) %>% ungroup()
-View(stat.harvest2)
 
 #####
 
@@ -514,7 +511,7 @@ player.box.score.avgs <- function(box_scores, game_ids, stats_player_name){
     
     return(list(box_scores, avgs))
 }
-
+#####
 
 ###############
 # retrieving a player's missed games and calculating player avg for those games
@@ -608,7 +605,6 @@ player.missed.games.stats <- function(team_abb, missed_player_names, stats_playe
                 "box.scores.active"=box.games.active, "avg.active"=avgs.active, 
                 "avg.change"=avg.change))
 }
-
 #####
 
 ###############
@@ -641,3 +637,52 @@ games.betting.info <- function(gids){
 }
 #####
 
+###############
+# calculate player avg against current opp. in current season and previous season
+###############
+player.avg.vs.opp <- function(opp, players, box_scores_current=NULL, box_scores_prev=NULL){
+  # ingest opp team abbreviation, vector of player names, box scores from current and previous seasons
+  # output players avgs against teams
+  
+  current.season <- hoopR::most_recent_nba_season()
+  if(is.null(box_scores_current)){
+    box_scores_current <- hoopR::load_nba_player_box(seasons = current.season) %>% 
+                              tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
+                              tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
+                              tidyr::separate(ft, sep = "-", into = c("ftm","fta"))
+  }
+  
+  if(is.null(box_scores_prev)){
+    box_scores_prev <- hoopR::load_nba_player_box(seasons = current.season - 1) %>% 
+      tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
+      tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
+      tidyr::separate(ft, sep = "-", into = c("ftm","fta"))
+  }
+  
+  box_scores_current <- box_scores_current %>% 
+    tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
+    tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
+    tidyr::separate(ft, sep = "-", into = c("ftm","fta"))
+  box_scores_prev <- box_scores_prev %>%
+    tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
+    tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
+    tidyr::separate(ft, sep = "-", into = c("ftm","fta"))
+  
+  opp <- tolower(opp)
+  players <- tolower(players)
+  
+  for(i in 1:length(players)){
+    if(i == 1){
+      avgs <- box_scores_current %>%
+        mutate(athlete_display_name = tolower(athlete_display_name)) %>%
+        filter(athlete_display_name == player) %>%
+        select(game_id)
+    }
+    else{
+      
+    }
+  }
+  return(avgs)
+}
+
+#####
