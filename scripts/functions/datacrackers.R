@@ -640,8 +640,11 @@ games.betting.info <- function(gids){
 ###############
 # calculate player avg against current opp. in current season and previous season
 ###############
-player.avg.vs.opp <- function(opp, players, box_scores_current=NULL, box_scores_prev=NULL){
-  # ingest opp team abbreviation, vector of player names, box scores from current and previous seasons
+player.avg.vs.opp <- function(team, opp, players, 
+                              schedule_current=NULL, schedule_prev=NULL,
+                              box_scores_current=NULL, box_scores_prev=NULL){
+  # ingest players' team, opp team abbreviation, vector of player names, 
+  ## box scores from current and previous seasons, and schedules current and previous
   # output players avgs against teams
   
   current.season <- hoopR::most_recent_nba_season()
@@ -659,28 +662,47 @@ player.avg.vs.opp <- function(opp, players, box_scores_current=NULL, box_scores_
       tidyr::separate(ft, sep = "-", into = c("ftm","fta"))
   }
   
-  box_scores_current <- box_scores_current %>% 
-    tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
-    tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
-    tidyr::separate(ft, sep = "-", into = c("ftm","fta"))
-  box_scores_prev <- box_scores_prev %>%
-    tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
-    tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
-    tidyr::separate(ft, sep = "-", into = c("ftm","fta"))
+  if(is.null(schedule_current)){
+    schedule_current <- hoopR::load_nba_schedule(seasons = current.season)
+  }
   
+  if(is.null(schedule_prev)){
+    schedule_current <- hoopR::load_nba_schedule(seasons = current.season - 1)
+  }
+  
+  box.scores <- rbind(box_scores_current, box_scores_prev) %>%
+                  tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
+                  tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
+                  tidyr::separate(ft, sep = "-", into = c("ftm","fta"))
+  
+  schedules <- (rbind(schedule_current, schedule_prev) %>%
+                filter(
+                (home_abbreviation == team & away_abbreviation == opp) |
+                  (home_abbreviation == opp & away_abbreviation == team)
+                 ) %>% 
+                select(game_id))$game_id
+  
+  team <- tolower(team)
   opp <- tolower(opp)
   players <- tolower(players)
   
   for(i in 1:length(players)){
     if(i == 1){
-      avgs <- box_scores_current %>%
+      avgs <- box.scores %>%
         mutate(athlete_display_name = tolower(athlete_display_name)) %>%
-        filter(athlete_display_name == player) %>%
-        select(game_id)
+        filter(athlete_display_name == player & 
+                 game_id %in% gids.matchup)
+
     }
     else{
-      
+      temp <- box.scores %>%
+        mutate(athlete_display_name = tolower(athlete_display_name)) %>%
+        filter(athlete_display_name == player & 
+                 game_id %in% gids.matchup)
+
+      avgs <- rbind(avgs, temp)
     }
+    
   }
   return(avgs)
 }
