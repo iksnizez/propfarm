@@ -111,8 +111,6 @@ def.rebound <- function(text){
 }
 #####
 
-
-
 ####################
 ## FUNCTION TO CALC SYNTHETIC AVG
 ####################
@@ -642,45 +640,72 @@ games.betting.info <- function(gids){
 ###############
 player.avg.vs.opp <- function(team, opp, players, 
                               schedule_current=NULL, schedule_prev=NULL,
-                              box_scores_current=NULL, box_scores_prev=NULL){
+                              box_scores_current=NULL, box_scores_prev=NULL,
+                              seasons=NULL){
   # ingest players' team, opp team abbreviation, vector of player names, 
   ## box scores from current and previous seasons, and schedules current and previous
+  ## can also provide a list of seasons if more than current and prev is desired
+  ## if season list is provided then any schedule or boxscore input is ignored.
   # output players avgs against teams
   
+  # storing current season value
   current.season <- hoopR::most_recent_nba_season()
-  if(is.null(box_scores_current)){
-    box_scores_current <- hoopR::load_nba_player_box(seasons = current.season) %>% 
-                              tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
-                              tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
-                              tidyr::separate(ft, sep = "-", into = c("ftm","fta"))
+
+  
+  # check to see if specific seasons were provided. # loop through thm
+  if(!is.null(seasons)){
+    schedules <- hoopR::load_nba_schedule(seasons = seasons[1])
+    box.scores <- hoopR::load_nba_player_box(seasons = seasons[1])
+    for(s in 2:length(seasons)){
+      temp.scheds <- hoopR::load_nba_schedule(seasons = seasons[s])
+      schedules <- rbind(schedules, temp.scheds)
+      
+      temp.bs <- hoopR::load_nba_player_box(seasons = seasons[s])
+      box.scores <- rbind(box.scores, temp.bs)
+    }
+     
   }
-  
-  if(is.null(box_scores_prev)){
-    box_scores_prev <- hoopR::load_nba_player_box(seasons = current.season - 1) %>% 
-      tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
-      tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
-      tidyr::separate(ft, sep = "-", into = c("ftm","fta"))
+  else{
+    # Checking if schedules and box scores are provided. Pulling them if not.
+    if(is.null(box_scores_current) & is.null(box_scores_prev)){
+      box_scores_current <- hoopR::load_nba_player_box(seasons = current.season)
+      
+      box_scores_prev <- hoopR::load_nba_player_box(seasons = current.season - 1)
+    }
+    else if(is.null(box_scores_current)){
+      box_scores_current <- hoopR::load_nba_player_box(seasons = current.season)
+    }
+    else{
+      box_scores_prev <- hoopR::load_nba_player_box(seasons = current.season - 1)
+    }
+    box.scores <- rbind(box_scores_current, box_scores_prev)
+    
+    # if specific seasons were not provided 
+    if(is.null(schedule_current)){
+      schedule_current <- hoopR::load_nba_schedule(seasons = current.season)
+    }
+    if(is.null(schedule_prev)){
+      schedule_current <- hoopR::load_nba_schedule(seasons = current.season - 1)
+    }
+    schedules <- rbind(schedule_current, schedule_prev)
   }
+
+  #####
   
-  if(is.null(schedule_current)){
-    schedule_current <- hoopR::load_nba_schedule(seasons = current.season)
-  }
+  # splitting shooting stats in box scores
+  box.scores <-   box.scores %>% 
+                    dplyr::filter(min >0) %>% 
+                    tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
+                    tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
+                    tidyr::separate(ft, sep = "-", into = c("ftm","fta"))
   
-  if(is.null(schedule_prev)){
-    schedule_current <- hoopR::load_nba_schedule(seasons = current.season - 1)
-  }
+  gids.matchup <- (schedules %>%
+                     filter(
+                          (home_abbreviation == team & away_abbreviation == opp) |
+                          (home_abbreviation == opp & away_abbreviation == team)
+                          ) %>% 
+                     select(game_id))$game_id
   
-  box.scores <- rbind(box_scores_current, box_scores_prev) %>%
-                  tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
-                  tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
-                  tidyr::separate(ft, sep = "-", into = c("ftm","fta"))
-  
-  schedules <- (rbind(schedule_current, schedule_prev) %>%
-                filter(
-                (home_abbreviation == team & away_abbreviation == opp) |
-                  (home_abbreviation == opp & away_abbreviation == team)
-                 ) %>% 
-                select(game_id))$game_id
   
   team <- tolower(team)
   opp <- tolower(opp)
@@ -690,21 +715,44 @@ player.avg.vs.opp <- function(team, opp, players,
     if(i == 1){
       avgs <- box.scores %>%
         mutate(athlete_display_name = tolower(athlete_display_name)) %>%
-        filter(athlete_display_name == player & 
-                 game_id %in% gids.matchup)
-
+        filter(
+                athlete_display_name == players[i] & 
+                game_id %in% gids.matchup)
     }
     else{
       temp <- box.scores %>%
         mutate(athlete_display_name = tolower(athlete_display_name)) %>%
-        filter(athlete_display_name == player & 
-                 game_id %in% gids.matchup)
+        filter(
+                athlete_display_name == players[i] & 
+                game_id %in% gids.matchup)
 
       avgs <- rbind(avgs, temp)
     }
     
   }
-  return(avgs)
+  agged <- avgs %>%  
+    group_by(athlete_display_name) %>%
+    summarize(gp=n(),
+              minAvg = mean(as.numeric(min), na.rm = TRUE),
+              fgmAvg = mean(as.numeric(fgm), na.rm = TRUE),
+              fgaAvg = mean(as.numeric(fga), na.rm = TRUE),
+              fg3mAvg = mean(as.numeric(fg3m), na.rm = TRUE),
+              fg3aAvg = mean(as.numeric(fg3a), na.rm = TRUE),
+              ftmAvg = mean(as.numeric(ftm), na.rm = TRUE),
+              ftaAvg = mean(as.numeric(fta), na.rm = TRUE),
+              orebAvg = mean(as.numeric(oreb), na.rm = TRUE),
+              dreb = mean(as.numeric(dreb), na.rm = TRUE),
+              rebAvg = mean(as.numeric(reb), na.rm = TRUE),
+              astAvg = mean(as.numeric(ast), na.rm = TRUE),
+              stlAvg = mean(as.numeric(stl), na.rm = TRUE),
+              blkAvg = mean(as.numeric(blk), na.rm = TRUE),
+              toAvg = mean(as.numeric(to), na.rm = TRUE),
+              ptsAvg = mean(as.numeric(pts), na.rm = TRUE)
+    )
+  # returns df of individual game boxscores and the df of the box scores aggregated
+  return(list("matchup.boxscores"=avgs, 
+              "matchup.agg"=agged))
+
 }
 
 #####
