@@ -638,93 +638,81 @@ games.betting.info <- function(gids){
 ###############
 # calculate player avg against current opp. in current season and previous season
 ###############
-player.avg.vs.opp <- function(team, opp, players, 
-                              schedule_current=NULL, schedule_prev=NULL,
-                              box_scores_current=NULL, box_scores_prev=NULL,
+player.avg.vs.opp <- function(players, opp,  
+                              schedule=NULL,
+                              box_scores=NULL,
                               seasons=NULL){
-  # ingest players' team, opp team abbreviation, vector of player names, 
-  ## box scores from current and previous seasons, and schedules current and previous
+  #  opp team abbreviation, vector of player names, 
+  ## df of boxscores, df of schedules 
   ## can also provide a list of seasons if more than current and prev is desired
-  ## if season list is provided then any schedule or boxscore input is ignored.
-  # output players avgs against teams
+  ## if season list  is provided, dfs are ignored.
+  # output players avgs against teams and boxscores for the games into avgs
   
-  # storing current season value
-  current.season <- hoopR::most_recent_nba_season()
+  opp <- toupper(opp)
+  players <- tolower(players)
 
-  
-  # check to see if specific seasons were provided. # loop through thm
-  if(!is.null(seasons)){
-    schedules <- hoopR::load_nba_schedule(seasons = seasons[1])
+  # check to see if specific seasons were provided. 
+  # loop through the seasons to build the boxscores and schedules
+  # filter the schedules to only games the OPP of interest are in
+  if(!is.null(seasons) ){
+    schedules <- hoopR::load_nba_schedule(seasons = seasons[1]) %>%
+                          filter(home_abbreviation == opp | away_abbreviation == opp)
     box.scores <- hoopR::load_nba_player_box(seasons = seasons[1])
     for(s in 2:length(seasons)){
-      temp.scheds <- hoopR::load_nba_schedule(seasons = seasons[s])
+      temp.scheds <- hoopR::load_nba_schedule(seasons = seasons[s]) %>%
+                              filter(home_abbreviation == opp | away_abbreviation == opp)
       schedules <- rbind(schedules, temp.scheds)
       
       temp.bs <- hoopR::load_nba_player_box(seasons = seasons[s])
-      box.scores <- rbind(box.scores, temp.bs)
+      box_scores <- rbind(box.scores, temp.bs)
     }
      
   }
+  # no seasons provided, either pulls current and previous or use provided
+  # box scores and schedules
   else{
-    # Checking if schedules and box scores are provided. Pulling them if not.
-    if(is.null(box_scores_current) & is.null(box_scores_prev)){
-      box_scores_current <- hoopR::load_nba_player_box(seasons = current.season)
-      
-      box_scores_prev <- hoopR::load_nba_player_box(seasons = current.season - 1)
+    # storing current season value
+    current.season <- hoopR::most_recent_nba_season()
+    # Checking if schedules and box scores are provided. gathering them if not.
+    if(is.null(box_scores)){
+      box.scores.current <- hoopR::load_nba_player_box(seasons = current.season)
+      box.scores.prev <- hoopR::load_nba_player_box(seasons = current.season - 1)
+      box_scores <- rbind(box.scores.current, box.scores.prev)
     }
-    else if(is.null(box_scores_current)){
-      box_scores_current <- hoopR::load_nba_player_box(seasons = current.season)
-    }
-    else{
-      box_scores_prev <- hoopR::load_nba_player_box(seasons = current.season - 1)
-    }
-    box.scores <- rbind(box_scores_current, box_scores_prev)
     
-    # if specific seasons were not provided 
-    if(is.null(schedule_current)){
-      schedule_current <- hoopR::load_nba_schedule(seasons = current.season)
+    # if specific seasons were not provided pull current and previous seasons and filter for OPP games
+    if(is.null(schedule)){
+      schedule_current <- hoopR::load_nba_schedule(seasons = current.season) %>%
+                                  filter(home_abbreviation == opp | away_abbreviation == opp)
+      schedule_prev <- hoopR::load_nba_schedule(seasons = current.season - 1) %>%
+                                  filter(home_abbreviation == opp | away_abbreviation == opp)
+      schedules <- rbind(schedule_current, schedule_prev)
     }
-    if(is.null(schedule_prev)){
-      schedule_current <- hoopR::load_nba_schedule(seasons = current.season - 1)
-    }
-    schedules <- rbind(schedule_current, schedule_prev)
   }
+  # assign the game_ids for the OPP
+  opp.game.ids <- (schedules %>% select(id))$id
 
-  #####
-  
   # splitting shooting stats in box scores
-  box.scores <-   box.scores %>% 
+  box.scores <-   box_scores %>% 
                     dplyr::filter(min >0) %>% 
                     tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
                     tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
-                    tidyr::separate(ft, sep = "-", into = c("ftm","fta"))
-  
-  gids.matchup <- (schedules %>%
-                     filter(
-                          (home_abbreviation == team & away_abbreviation == opp) |
-                          (home_abbreviation == opp & away_abbreviation == team)
-                          ) %>% 
-                     select(game_id))$game_id
-  
-  
-  team <- tolower(team)
-  opp <- tolower(opp)
-  players <- tolower(players)
+                    tidyr::separate(ft, sep = "-", into = c("ftm","fta")) %>%
+                    mutate(athlete_display_name = tolower(athlete_display_name))
   
   for(i in 1:length(players)){
+    # final filter of the box scores to be just the single player  in the game_ids the OPP played
     if(i == 1){
       avgs <- box.scores %>%
-        mutate(athlete_display_name = tolower(athlete_display_name)) %>%
-        filter(
-                athlete_display_name == players[i] & 
-                game_id %in% gids.matchup)
+                filter(athlete_display_name == players[i] & 
+                       game_id %in% opp.game.ids
+                      )
     }
     else{
       temp <- box.scores %>%
-        mutate(athlete_display_name = tolower(athlete_display_name)) %>%
-        filter(
-                athlete_display_name == players[i] & 
-                game_id %in% gids.matchup)
+                filter(athlete_display_name == players[i] & 
+                       game_id %in% opp.game.ids
+                       )
 
       avgs <- rbind(avgs, temp)
     }
@@ -755,4 +743,5 @@ player.avg.vs.opp <- function(team, opp, players,
 
 }
 
+player.avg.vs.opp(c("Jakob Poeltl"), "NO", seasons = c(2022, 2023))
 #####
