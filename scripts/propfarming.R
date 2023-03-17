@@ -36,7 +36,17 @@ games.tomorrow <- espn_nba_scoreboard (season = tomorrow.date.char)
 
 ### retrieving the player boxscore and schedule for the season, 
 # this will be used to access players that are playing today and agg stats
-boxscore.player <- hoopR::load_nba_player_box(s)
+boxscore.player <- hoopR::load_nba_player_box(s) %>%
+                        # FILTER OUT ASG
+                        filter(game_id != 401524696) %>%
+                        # change generic positions 
+                        mutate(
+                            athlete_position_abbreviation = case_when(
+                                athlete_position_abbreviation == "G" ~ "SG",
+                                athlete_position_abbreviation == "F" ~ "SF",
+                                TRUE ~ athlete_position_abbreviation
+                            )
+                        )
 schedule <- load_nba_schedule(s)
 
 #save paths
@@ -123,7 +133,10 @@ matchups.today <- games.today %>% select(home_team_abb, away_team_abb)
 matchups.today.full <- games.today %>% select(home_team_abb, away_team_abb, game_id)
 
 # pulling player stats
-stat.harvest <- propfarming(boxscore.player, team.id.today, matchups.today.full) %>% ungroup()
+stat.harvest <- propfarming(boxscore.player, 
+                            team.id.today, 
+                            matchups.today.full, 10) %>% 
+                    ungroup()
 #addding date
 stat.harvest$date <- search.date
 # creating name column without suffixes to join with betting data until ID list is compiled
@@ -133,11 +146,8 @@ suffix.rep <- c(" Jr."="", " Sr."="", " III"="", " IV"="", " II"="",
 ##pos.rep <- c("^G"="SG", "^F"="PF")
 stat.harvest <- stat.harvest %>%
                     mutate(
-                        join.names = tolower(stringr::str_replace_all(athlete_display_name, suffix.rep)),
-                        #athlete_position_abbreviation = stringr::str_replace_all(
-                        #                                            athlete_position_abbreviation,
-                        #                                            pos.rep)
-                    )
+                        join.names = tolower(stringr::str_replace_all(athlete_display_name, suffix.rep))
+                    ) 
 
 # flag players who have seen large jump in minutes
 minutes.boosted <- stat.harvest %>% 
@@ -154,7 +164,7 @@ minutes.boosted <- stat.harvest %>%
                         select(athlete_id, athlete_display_name, athlete_position_abbreviation, team_abbreviation, 
                                direction, minAvg,minAvgL3, minAvgL10, minstd, minL3diff, minL10diff) %>%
                         arrange(direction)
-View(minutes.boosted)
+View(minutes.boosted %>% arrange(desc(direction)))
 
 #####
 
@@ -169,8 +179,8 @@ betting.table <- read.csv(betting.file.path) %>%
                     )
 
 # store the players from the harvest data that did not have any betting info
-missing.players <- setdiff(stat.harvest$join.names, betting.table$PLAYER)
-missing.players
+missing.players.odds <- setdiff(stat.harvest$join.names, betting.table$PLAYER)
+missing.players.odds
 #right join with betting table on the right so that only players with lines/odds are kept
 harvest <- right_join(stat.harvest, 
                       betting.table, 
@@ -185,28 +195,28 @@ harvest <- right_join(stat.harvest,
 ##################
 harvest <- harvest %>%
             mutate(
-                ptsOscore = (ptsSynth - ptsStdL3) - line_PTS,
-                ptsUscore = line_PTS - (ptsSynth + ptsStdL3),
-                rebOscore = (rebSynth - rebStdL3) - line_REB,
-                rebUscore = line_REB - (rebSynth + rebStdL3),
-                astOscore = (astSynth - astStdL3) - line_AST,
-                astUscore = line_AST - (astSynth + astStdL3),
-                #stlOscore = (stlSynth - stlStdL3) - line_STL,
-                #stlUscore = line_STL - (stlSynth + stlStdL3),
-                #blkOscore = (blkSynth - blkStdL3) - line_BLK,
-                #blkUscore = line_BLK - (blkSynth + blkStdL3),
-                fg3mOscore = (fg3mSynth - fg3mStdL3) - line_THREES,
-                fg3mUscore = line_THREES - (fg3mSynth + fg3mStdL3),
-                praOscore = (praSynth - praStdL3) - line_PTSREBAST,
-                praUscore = line_PTSREBAST - (praSynth + praStdL3),
-                prOscore = (prSynth - prStdL3) - line_PTSREB,
-                prUscore = line_PTSREB - (prSynth + prStdL3),
-                paOscore = (paSynth - paStdL3) - line_PTSAST,
-                paUscore = line_PTSAST - (paSynth + paStdL3),
-                raOscore = (raSynth - raStdL3) - line_REBAST,
-                raUscore = line_REBAST - (raSynth + raStdL3),
-                #sbOscore = (sbSynth - sbStdL3) - line_STLBLK,
-                #sbsUscore = line_STLBLK - (sbSynth + sbStdL3),
+                ptsOscore = round((ptsSynth - ptsStdL3) - line_PTS,3),
+                ptsUscore = round(line_PTS - (ptsSynth + ptsStdL3),3),
+                rebOscore = round((rebSynth - rebStdL3) - line_REB,3),
+                rebUscore = round(line_REB - (rebSynth + rebStdL3),3),
+                astOscore = round((astSynth - astStdL3) - line_AST,3),
+                astUscore = round(line_AST - (astSynth + astStdL3),3),
+                stlOscore = round((stlSynth - stlStdL3) - line_STL,3),
+                stlUscore = round(line_STL - (stlSynth + stlStdL3),3),
+                blkOscore = round((blkSynth - blkStdL3) - line_BLK,3),
+                blkUscore = round(line_BLK - (blkSynth + blkStdL3),3),
+                fg3mOscore = round((fg3mSynth - fg3mStdL3) - line_THREES,3),
+                fg3mUscore = round(line_THREES - (fg3mSynth + fg3mStdL3),3),
+                praOscore = round((praSynth - praStdL3) - line_PTSREBAST,3),
+                praUscore = round(line_PTSREBAST - (praSynth + praStdL3),3),
+                prOscore = round((prSynth - prStdL3) - line_PTSREB,3),
+                prUscore = round(line_PTSREB - (prSynth + prStdL3),3),
+                paOscore = round((paSynth - paStdL3) - line_PTSAST,3),
+                paUscore = round(line_PTSAST - (paSynth + paStdL3),3),
+                raOscore = round((raSynth - raStdL3) - line_REBAST,3),
+                raUscore = round(line_REBAST - (raSynth + raStdL3),3),
+                sbOscore = round((sbSynth - sbStdL3) - line_STLBLK,3),
+                sbUscore = round(line_STLBLK - (sbSynth + sbStdL3),3),
                 date = as.Date(date, format="%Y-%m-%d"),
                 game_id = as.numeric(game_id)
             )
@@ -318,8 +328,9 @@ updates <- boxscore.most.recent %>%
                 filter(athlete_id %in% yesterday.harvest$athlete_id)
 
 # players who were in the harvest data but did not show up in the boxscore
-missing.boxscores <- setdiff(yesterday.harvest$athlete_id %>% unique(),boxscore.most.recent$athlete_id %>% unique())
-missing.players <- harvest %>% filter(athlete_id %in% missing.boxscores) %>% select(player, athlete_id)
+missing.boxscores <- setdiff(boxscore.most.recent$athlete_id %>% unique(),
+                             yesterday.harvest$athlete_id %>% unique())
+missing.players <- yesterday.harvest %>% filter(athlete_id %in% missing.boxscores) %>% select(player, athlete_id)
 missing.players     
 # updating the data pulled from the database with the scores from the last game
 yesterday.harvest <- rows_update(yesterday.harvest, updates, by="athlete_id")

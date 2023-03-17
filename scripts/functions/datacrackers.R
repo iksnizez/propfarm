@@ -129,8 +129,9 @@ synth.avg <- function(season_avg, n_avg, n_games=3, games_played){
 ## FUNCTION TO CALCULATE PROPFARM PLAYER STATS FROM NBA BOX
 ####################
 # filtering entire season box score to only the teams playing today
-propfarming <- function(box.score.data, team.ids, matchups.today){
+propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20){
     # ingest season boxscore data from load_nba_player_box and vector of team ids and dataframe of home/away teams
+    # minFilter is used to filter out insignificant players.
     # output filtered list of players and their prop farm stat data for today
     
     #convert team ids to player ids in order to filter box scores
@@ -141,8 +142,8 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
 
     players.today <- box.score.data %>% 
         filter(athlete_id %in% pids) %>% 
-        arrange(athlete_id, team_id,  desc(game_date))
-
+        arrange(athlete_id, desc(game_date))
+    
     # breaking the shooting attempts from makes and converting to numbers
     players.today <-  players.today %>%
         tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
@@ -267,40 +268,37 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
     df <- merge(players.today.season.avgs, players.today.l3.avgs, by = "athlete_id")
     df <- merge(df, players.today.l10.avgs, by = "athlete_id")
       
-    #adding the player name back to the data
+    ###adding the player name back to the data
+    # grabbing current roster info
+    player.info <- hoopR::nba_commonallplayers(season="2022-23", is_only_current_season = 1)$CommonAllPlayers %>%
+                      select(PERSON_ID, DISPLAY_FIRST_LAST, TEAM_ABBREVIATION) %>%
+                      rename(c(
+                        athlete_id = PERSON_ID,
+                        athlete_display_name = DISPLAY_FIRST_LAST,
+                        team_abbreviation = TEAM_ABBREVIATION
+                      ))
+    
+    #creating lookup for current team
+    pi <- player.info$team_abbreviation
+    names(pi) <- player.info$athlete_display_name
+    
+    # adding back extra athlete details
     df <- merge(players.today %>% 
                     select(athlete_id, athlete_display_name, athlete_position_abbreviation, team_abbreviation) %>% 
                     group_by(athlete_id)%>%
-                    filter(row_number()==1), 
+                    filter(row_number()==n()), 
                 df, 
                 by = "athlete_id",
                 all.x = TRUE)
     
-    # filtering data to players with >=20 avg. minutes in the last 10 games
+    # filtering data to players with >=20(or provided) avg. minutes in the last 10 games
     # adding:
         #back-to-back flag 
         #opponent
     df <- df %>%
-        filter(minAvgL10 >= 20) %>%
+        filter(minAvgL10 >= minFilter) %>%
         rowwise() %>%
-        mutate(game_id = ifelse(
-                            team_abbreviation %in% matchups.today$home_team_abb, 
-                            matchups.today[matchups.today$home_team_abb == team_abbreviation, "game_id"][[1]],
-                            matchups.today[matchups.today$away_team_abb == team_abbreviation, "game_id"][[1]]
-                        ),
-               btb = case_when((team_abbreviation %in% back.to.back.first) ~ 1,
-                               (team_abbreviation %in% back.to.back.last) ~ 2,
-                               TRUE ~ 0
-                     ),
-                opp = ifelse(team_abbreviation %in% matchups.today$home_team_abb,
-                             (matchups.today %>% filter(home_team_abb == team_abbreviation) %>% select(away_team_abb))[[1]],
-                             (matchups.today %>% filter(away_team_abb == team_abbreviation) %>% select(home_team_abb))[[1]]
-                      ),
-                btbOpp = case_when((opp %in% back.to.back.first) ~ 1,
-                                   (opp %in% back.to.back.last) ~ 2,
-                                   TRUE ~ 0
-                ),
-                ptsSynth = synth.avg(ptsAvg, ptsAvgL3, 3, gp),
+        mutate(ptsSynth = synth.avg(ptsAvg, ptsAvgL3, 3, gp),
                 rebSynth = synth.avg(rebAvg, rebAvgL3, 3, gp),
                 astSynth = synth.avg(astAvg, astAvgL3, 3, gp),
                 stlSynth = synth.avg(stlAvg, stlAvgL3, 3, gp),
@@ -310,8 +308,31 @@ propfarming <- function(box.score.data, team.ids, matchups.today){
                 prSynth = synth.avg(prAvg, prAvgL3, 3, gp),
                 paSynth = synth.avg(paAvg, paAvgL3, 3, gp),
                 raSynth = synth.avg(raAvg, raAvgL3, 3, gp),
-                sbSynth = synth.avg(sbAvg, sbAvgL3, 3, gp)
+                sbSynth = synth.avg(sbAvg, sbAvgL3, 3, gp),
+               team_abbreviation = pi[athlete_display_name]
+        ) %>%
+      # opp has to be looked up after the team abrv has been updated to players current team
+      # this might be able to be put in the mutate above after the team_abbrv update but 
+      # couldnt test while off line
+      mutate(
+        game_id = ifelse(
+          team_abbreviation %in% matchups.today$home_team_abb, 
+          matchups.today[matchups.today$home_team_abb == team_abbreviation, "game_id"][[1]],
+          matchups.today[matchups.today$away_team_abb == team_abbreviation, "game_id"][[1]]
+        ),
+        opp = ifelse(team_abbreviation %in% matchups.today$home_team_abb,
+                     (matchups.today %>% filter(home_team_abb == team_abbreviation) %>% select(away_team_abb))[[1]],
+                     (matchups.today %>% filter(away_team_abb == team_abbreviation) %>% select(home_team_abb))[[1]]
+        ),
+        btbOpp = case_when((opp %in% back.to.back.first) ~ 1,
+                           (opp %in% back.to.back.last) ~ 2,
+                           TRUE ~ 0
+        ),
+        btb = case_when((team_abbreviation %in% back.to.back.first) ~ 1,
+                        (team_abbreviation %in% back.to.back.last) ~ 2,
+                        TRUE ~ 0
         )
+      )
     
     return(df)    
 }
