@@ -129,7 +129,7 @@ synth.avg <- function(season_avg, n_avg, n_games=3, games_played){
 ## FUNCTION TO CALCULATE PROPFARM PLAYER STATS FROM NBA BOX
 ####################
 # filtering entire season box score to only the teams playing today
-propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20){
+propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20, player_info=NULL){
     # ingest season boxscore data from load_nba_player_box and vector of team ids and dataframe of home/away teams
     # minFilter is used to filter out insignificant players.
     # output filtered list of players and their prop farm stat data for today
@@ -270,13 +270,34 @@ propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20){
       
     ###adding the player name back to the data
     # grabbing current roster info
-    player.info <- hoopR::nba_commonallplayers(season="2022-23", is_only_current_season = 1)$CommonAllPlayers %>%
-                      select(PERSON_ID, DISPLAY_FIRST_LAST, TEAM_ABBREVIATION) %>%
-                      rename(c(
-                        athlete_id = PERSON_ID,
-                        athlete_display_name = DISPLAY_FIRST_LAST,
-                        team_abbreviation = TEAM_ABBREVIATION
-                      ))
+    if(is.null(player_info)){
+      player.info <- hoopR::nba_commonallplayers(season="2022-23", is_only_current_season = 1)$CommonAllPlayers %>%
+        mutate(TEAM_ABBREVIATION = case_when(
+          TEAM_ABBREVIATION == "NOP" ~ "NO",
+          TEAM_ABBREVIATION == "NYK" ~ "NY",
+          TEAM_ABBREVIATION == "SAS" ~ "SA",
+          TEAM_ABBREVIATION == "UTA" ~ "UTAH",
+          TEAM_ABBREVIATION == "WAS" ~ "WSH",
+          TEAM_ABBREVIATION == "GSW" ~ "GS",
+          TRUE ~ TEAM_ABBREVIATION
+        )) %>%
+        select(PERSON_ID, DISPLAY_FIRST_LAST, TEAM_ABBREVIATION) %>%
+        rename(c(
+          athlete_id = PERSON_ID,
+          athlete_display_name = DISPLAY_FIRST_LAST,
+          team_abbreviation = TEAM_ABBREVIATION
+        ))
+    }
+    else{
+      player.info <- player_info %>%
+        select(PERSON_ID, DISPLAY_FIRST_LAST, TEAM_ABBREVIATION) %>%
+        rename(c(
+          athlete_id = PERSON_ID,
+          athlete_display_name = DISPLAY_FIRST_LAST,
+          team_abbreviation = TEAM_ABBREVIATION
+        ))
+    }
+    
     
     #creating lookup for current team
     pi <- player.info$team_abbreviation
@@ -386,12 +407,20 @@ opp.stats.last.n.games  <- function(season, num.game.lookback=15, box.scores=NUL
     
     # checks if box scores dataframe is provided and pulls box scores data if not
     if(is.null(box.scores)){
-        box.scores <- hoopR::load_nba_player_box(seasons = season)
+        box.scores <- hoopR::load_nba_player_box(seasons = season)  %>%
+          mutate(TEAM_ABBREVIATION = case_when(
+            TEAM_ABBREVIATION == "GSW" ~ "GS",
+            TRUE ~ TEAM_ABBREVIATION
+          ))
     }
     
     # checks if schedule dataframe is provided and pulls schedule data if not
     if(is.null(schedule)){
-        schedule <- hoopR::load_nba_schedule(seasons = season)
+        schedule <- hoopR::load_nba_schedule(seasons = season)  %>%
+          mutate(TEAM_ABBREVIATION = case_when(
+            TEAM_ABBREVIATION == "GSW" ~ "GS",
+            TRUE ~ TEAM_ABBREVIATION
+          ))
     }
     
     # schedule data for only games played

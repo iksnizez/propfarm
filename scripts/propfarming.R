@@ -47,7 +47,19 @@ boxscore.player <- hoopR::load_nba_player_box(s) %>%
                                 TRUE ~ athlete_position_abbreviation
                             )
                         )
+
 schedule <- load_nba_schedule(s)
+
+player.info <- hoopR::nba_commonallplayers(season="2022-23", is_only_current_season = 1)$CommonAllPlayers %>%
+                        mutate(TEAM_ABBREVIATION = case_when(
+                                    TEAM_ABBREVIATION == "NOP" ~ "NO",
+                                    TEAM_ABBREVIATION == "NYK" ~ "NY",
+                                    TEAM_ABBREVIATION == "SAS" ~ "SA",
+                                    TEAM_ABBREVIATION == "UTA" ~ "UTAH",
+                                    TEAM_ABBREVIATION == "WAS" ~ "WSH",
+                                    TEAM_ABBREVIATION == "GSW" ~ "GS",
+                                    TRUE ~ TEAM_ABBREVIATION
+                        ))
 
 #save paths
 betting.file.path <- paste("data/", search.date, "_odds.csv", sep="")
@@ -56,53 +68,6 @@ harvest.file.path <- paste("output/", search.date, "_harvest.csv", sep="")
 # adding the additional IDs and team names to the nba_teams 
 # the default dataframe that loads with the package. using function from datacrackers.R
 nba_teams <- update.default.team.data()
-#####
-
-##################
-##data import - 2022-23 season
-##################
-# search on the year the season ends
-nba_pbp <- hoopR::load_nba_pbp(2023)
-#####
-
-##################
-# updating team records and ats records
-##################
-#updating pbp to be able to calculate all teams ATS records
-finals <- nba_pbp %>% filter(type_text == "End Game") %>% 
-    mutate(
-        homeWin = ifelse(home_score > away_score,1,0),
-        awayWin = ifelse(away_score > home_score,1,0),
-        homeATSw= ifelse((home_score + game_spread) > away_score, 1,0),
-        awayATSw = ifelse((away_score + home_team_spread) > home_score, 1,0),
-        pushATS = ifelse((away_score + home_team_spread) == home_score, 1,0)
-    )
-
-# calculating records and ats records for every team
-teams = unique(c(finals$away_team_abbrev, finals$home_team_abbrev))
-team.records <- data.frame(team=character(), w=integer(), l=integer(), 
-                           wATS=integer(), lATS=integer(), tATS=integer())
-
-for (team in teams) {
-    team.results <- finals %>% 
-        filter(away_team_abbrev == team | home_team_abbrev == team) %>%
-        mutate(teamWin= ifelse((away_team_abbrev == team & awayWin == 1) |(home_team_abbrev == team & homeWin == 1),  
-                               1, 0),
-               teamATSwin= ifelse((away_team_abbrev == team & awayATSw== 1) |(home_team_abbrev == team & homeATSw == 1),  
-                                  1, 0)
-        )
-    
-    record <- list(team, sum(team.results$teamWin), # wins
-                   nrow(team.results) - sum(team.results$teamWin), # losses
-                   sum(team.results$teamATSwin), # wins ATS
-                   nrow(team.results) - sum(team.results$teamATSwin) - sum(team.results$pushATS), #losses ATS
-                   sum(team.results$pushATS) # pushes
-    )
-    
-    team.records <- rbind(team.records, setNames(record, names(team.records)))
-    
-}
-team.records %>% arrange(team) %>% select(team, wATS, lATS, tATS)
 #####
 
 ##################
@@ -135,7 +100,8 @@ matchups.today.full <- games.today %>% select(home_team_abb, away_team_abb, game
 # pulling player stats
 stat.harvest <- propfarming(boxscore.player, 
                             team.id.today, 
-                            matchups.today.full, 10) %>% 
+                            matchups.today.full, 10,
+                            player.info) %>% 
                     ungroup()
 #addding date
 stat.harvest$date <- search.date
@@ -161,7 +127,7 @@ minutes.boosted <- stat.harvest %>%
                                    TRUE ~ "flat"
                             )) %>%
                         filter(minL3diff > 0 | minL10diff > 0) %>%
-                        select(athlete_id, athlete_display_name, athlete_position_abbreviation, team_abbreviation, 
+                        select(athlete_id,  athlete_display_name, athlete_position_abbreviation, team_abbreviation, 
                                direction, minAvg,minAvgL3, minAvgL10, minstd, minL3diff, minL10diff) %>%
                         arrange(direction)
 View(minutes.boosted %>% arrange(desc(direction)))
@@ -175,8 +141,17 @@ betting.table <- read.csv(betting.file.path) %>%
                     pivot_wider(names_from = stat,
                                 values_from = c(line, oOdds, uOdds)) %>%
                     mutate(
-                        PLAYER= tolower(stringr::str_replace_all(PLAYER, suffix.rep))
-                    )
+                        PLAYER= tolower(stringr::str_replace_all(PLAYER, suffix.rep)),
+                        team = case_when(
+                            team == "NOP" ~ "NO",
+                            team == "NYK" ~ "NY",
+                            team == "SAS" ~ "SA",
+                            team == "UTA" ~ "UTAH",
+                            team == "WAS" ~ "WSH",
+                            team == "GSW" ~ "GS",
+                            TRUE ~ team
+                    ))
+
 
 # store the players from the harvest data that did not have any betting info
 missing.players.odds <- setdiff(stat.harvest$join.names, betting.table$PLAYER)
@@ -363,6 +338,52 @@ dbDisconnect(conn)
 #write.csv(x = stat.harvest,file =  harvest.file.path, row.names=FALSE)
 #write.csv(x = yesterday.harvest,file =  "output/dbBackup.csv", row.names=FALSE)
 
+##################
+##data import - 2022-23 season
+##################
+# search on the year the season ends
+nba_pbp <- hoopR::load_nba_pbp(2023)
+#####
+
+##################
+# updating team records and ats records
+##################
+#updating pbp to be able to calculate all teams ATS records
+finals <- nba_pbp %>% filter(type_text == "End Game") %>% 
+    mutate(
+        homeWin = ifelse(home_score > away_score,1,0),
+        awayWin = ifelse(away_score > home_score,1,0),
+        homeATSw= ifelse((home_score + game_spread) > away_score, 1,0),
+        awayATSw = ifelse((away_score + home_team_spread) > home_score, 1,0),
+        pushATS = ifelse((away_score + home_team_spread) == home_score, 1,0)
+    )
+
+# calculating records and ats records for every team
+teams = unique(c(finals$away_team_abbrev, finals$home_team_abbrev))
+team.records <- data.frame(team=character(), w=integer(), l=integer(), 
+                           wATS=integer(), lATS=integer(), tATS=integer())
+
+for (team in teams) {
+    team.results <- finals %>% 
+        filter(away_team_abbrev == team | home_team_abbrev == team) %>%
+        mutate(teamWin= ifelse((away_team_abbrev == team & awayWin == 1) |(home_team_abbrev == team & homeWin == 1),  
+                               1, 0),
+               teamATSwin= ifelse((away_team_abbrev == team & awayATSw== 1) |(home_team_abbrev == team & homeATSw == 1),  
+                                  1, 0)
+        )
+    
+    record <- list(team, sum(team.results$teamWin), # wins
+                   nrow(team.results) - sum(team.results$teamWin), # losses
+                   sum(team.results$teamATSwin), # wins ATS
+                   nrow(team.results) - sum(team.results$teamATSwin) - sum(team.results$pushATS), #losses ATS
+                   sum(team.results$pushATS) # pushes
+    )
+    
+    team.records <- rbind(team.records, setNames(record, names(team.records)))
+    
+}
+team.records %>% arrange(team) %>% select(team, wATS, lATS, tATS)
+#####
 
 ##################
 #
