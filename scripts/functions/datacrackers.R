@@ -129,7 +129,11 @@ synth.avg <- function(season_avg, n_avg, n_games=3, games_played){
 ## FUNCTION TO CALCULATE PROPFARM PLAYER STATS FROM NBA BOX
 ####################
 # filtering entire season box score to only the teams playing today
+<<<<<<< HEAD
 propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20, player_info=NULL){
+=======
+propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20){
+>>>>>>> eb2bd529828de2d8ca3e26fd61db2204dbfa19a0
     # ingest season boxscore data from load_nba_player_box and vector of team ids and dataframe of home/away teams
     # minFilter is used to filter out insignificant players.
     # output filtered list of players and their prop farm stat data for today
@@ -270,6 +274,7 @@ propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20, 
       
     ###adding the player name back to the data
     # grabbing current roster info
+<<<<<<< HEAD
     if(is.null(player_info)){
       player.info <- hoopR::nba_commonallplayers(season="2022-23", is_only_current_season = 1)$CommonAllPlayers %>%
         mutate(TEAM_ABBREVIATION = case_when(
@@ -298,6 +303,15 @@ propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20, 
         ))
     }
     
+=======
+    player.info <- hoopR::nba_commonallplayers(season="2022-23", is_only_current_season = 1)$CommonAllPlayers %>%
+                      select(PERSON_ID, DISPLAY_FIRST_LAST, TEAM_ABBREVIATION) %>%
+                      rename(c(
+                        athlete_id = PERSON_ID,
+                        athlete_display_name = DISPLAY_FIRST_LAST,
+                        team_abbreviation = TEAM_ABBREVIATION
+                      ))
+>>>>>>> eb2bd529828de2d8ca3e26fd61db2204dbfa19a0
     
     #creating lookup for current team
     pi <- player.info$team_abbreviation

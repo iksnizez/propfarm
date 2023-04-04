@@ -47,7 +47,10 @@ boxscore.player <- hoopR::load_nba_player_box(s) %>%
                                 TRUE ~ athlete_position_abbreviation
                             )
                         )
+<<<<<<< HEAD
 
+=======
+>>>>>>> eb2bd529828de2d8ca3e26fd61db2204dbfa19a0
 schedule <- load_nba_schedule(s)
 
 player.info <- hoopR::nba_commonallplayers(season="2022-23", is_only_current_season = 1)$CommonAllPlayers %>%
@@ -100,8 +103,12 @@ matchups.today.full <- games.today %>% select(home_team_abb, away_team_abb, game
 # pulling player stats
 stat.harvest <- propfarming(boxscore.player, 
                             team.id.today, 
+<<<<<<< HEAD
                             matchups.today.full, 10,
                             player.info) %>% 
+=======
+                            matchups.today.full, 10) %>% 
+>>>>>>> eb2bd529828de2d8ca3e26fd61db2204dbfa19a0
                     ungroup()
 #addding date
 stat.harvest$date <- search.date
