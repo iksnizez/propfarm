@@ -129,11 +129,7 @@ synth.avg <- function(season_avg, n_avg, n_games=3, games_played){
 ## FUNCTION TO CALCULATE PROPFARM PLAYER STATS FROM NBA BOX
 ####################
 # filtering entire season box score to only the teams playing today
-<<<<<<< HEAD
 propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20, player_info=NULL){
-=======
-propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20){
->>>>>>> eb2bd529828de2d8ca3e26fd61db2204dbfa19a0
     # ingest season boxscore data from load_nba_player_box and vector of team ids and dataframe of home/away teams
     # minFilter is used to filter out insignificant players.
     # output filtered list of players and their prop farm stat data for today
@@ -145,14 +141,31 @@ propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20){
     pids <- unique(c(all.pids$athlete_id))
 
     players.today <- box.score.data %>% 
-        filter(athlete_id %in% pids) %>% 
+        filter(athlete_id %in% pids & 
+                 did_not_play == FALSE
+               ) %>% 
+        rename(c(
+          fgm = field_goals_made,
+          fga = field_goals_attempted,
+          fg3m = three_point_field_goals_made,
+          fg3a = three_point_field_goals_attempted,
+          ftm = free_throws_made,
+          fta = free_throws_attempted,
+          min = minutes,
+          pts = points,
+          reb = rebounds,
+          ast = assists,
+          stl = steals,
+          blk = blocks,
+          to = turnovers,
+          pf = fouls,
+          oreb = offensive_rebounds,
+          dreb = defensive_rebounds
+        )) %>%
         arrange(athlete_id, desc(game_date))
     
     # breaking the shooting attempts from makes and converting to numbers
     players.today <-  players.today %>%
-        tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
-        tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
-        tidyr::separate(ft, sep = "-", into = c("ftm","fta")) %>%
         mutate(
             pts =  as.numeric(as.character(pts)),
             reb =  as.numeric(as.character(reb)),
@@ -274,7 +287,6 @@ propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20){
       
     ###adding the player name back to the data
     # grabbing current roster info
-<<<<<<< HEAD
     if(is.null(player_info)){
       player.info <- hoopR::nba_commonallplayers(season="2022-23", is_only_current_season = 1)$CommonAllPlayers %>%
         mutate(TEAM_ABBREVIATION = case_when(
@@ -302,16 +314,6 @@ propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20){
           team_abbreviation = TEAM_ABBREVIATION
         ))
     }
-    
-=======
-    player.info <- hoopR::nba_commonallplayers(season="2022-23", is_only_current_season = 1)$CommonAllPlayers %>%
-                      select(PERSON_ID, DISPLAY_FIRST_LAST, TEAM_ABBREVIATION) %>%
-                      rename(c(
-                        athlete_id = PERSON_ID,
-                        athlete_display_name = DISPLAY_FIRST_LAST,
-                        team_abbreviation = TEAM_ABBREVIATION
-                      ))
->>>>>>> eb2bd529828de2d8ca3e26fd61db2204dbfa19a0
     
     #creating lookup for current team
     pi <- player.info$team_abbreviation
@@ -378,14 +380,32 @@ propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20){
 # SPLIT AND SUM BOX SCORES
 ####################
 split.sum.box.scores <- function(box.scores, gids, t= NULL, min = 0){
-    
+    # this updates the nba box score columns and filters them for specific games by gid
+    # it's purpose is to be used to look at the opponents of a single team in the gids
+    # specifically when calculating a team surrendered stats.
     split.summed <- box.scores %>%
         filter(game_id %in% gids,
                team_abbreviation != t,
-               min > 0) %>% 
-        tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
-        tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
-        tidyr::separate(ft, sep = "-", into = c("ftm","fta")) %>%
+               minutes > 0,
+               did_not_play == FALSE) %>% 
+        rename(c(
+          fgm = field_goals_made,
+          fga = field_goals_attempted,
+          fg3m = three_point_field_goals_made,
+          fg3a = three_point_field_goals_attempted,
+          ftm = free_throws_made,
+          fta = free_throws_attempted,
+          min = minutes,
+          pts = points,
+          reb = rebounds,
+          ast = assists,
+          stl = steals,
+          blk = blocks,
+          to = turnovers,
+          pf = fouls,
+          oreb = offensive_rebounds,
+          dreb = defensive_rebounds
+        )) %>%
         group_by(game_id, team_abbreviation, athlete_position_abbreviation) %>%
         summarize(fgmCount = sum(as.numeric(fgm)),
                   fgaCount = sum(as.numeric(fga)),
@@ -449,16 +469,14 @@ opp.stats.last.n.games  <- function(season, num.game.lookback=15, box.scores=NUL
     # with some teams above and below the desired look back. changed to do each team indiviually 
     # so that the look back holds true for all teams. I ama not sure what caused the descrepancy
     for(t in teams){
-        
+
         #starting the first dataframe that all other teams will add into
         gids <- (completed.games %>%
                      filter(home_abbreviation == t | away_abbreviation == t) %>%
                      arrange(desc(date)) %>%
                      slice(1:num.game.lookback) %>%
                      select(id))[["id"]]
-        
-        
-        
+
         if(t == teams[1]){
             #retrieve gid boxscores and split att/made, aggregating stats by team, position
             grouped <- split.sum.box.scores(box.scores, gids, t=t, min=0)
@@ -469,7 +487,7 @@ opp.stats.last.n.games  <- function(season, num.game.lookback=15, box.scores=NUL
             grouped <- rbind(grouped, temp)
         }
     }
-    
+
     # groups the agg stats by team for totals over n games
     stats.team.opp.total <- grouped %>%
         group_by(
@@ -545,10 +563,25 @@ player.box.score.avgs <- function(box_scores, game_ids, stats_player_name){
     box_scores <- box_scores %>%
                     mutate(athlete_display_name = tolower(athlete_display_name)) %>%
                     filter(game_id %in% game_ids & 
-                           athlete_display_name == stats_player_name) %>%
-                    tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
-                    tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
-                    tidyr::separate(ft, sep = "-", into = c("ftm","fta"))
+                           athlete_display_name == stats_player_name) %>% 
+                    rename(c(
+                      fgm = field_goals_made,
+                      fga = field_goals_attempted,
+                      fg3m = three_point_field_goals_made,
+                      fg3a = three_point_field_goals_attempted,
+                      ftm = free_throws_made,
+                      fta = free_throws_attempted,
+                      min = minutes,
+                      pts = points,
+                      reb = rebounds,
+                      ast = assists,
+                      stl = steals,
+                      blk = blocks,
+                      to = turnovers,
+                      pf = fouls,
+                      oreb = offensive_rebounds,
+                      dreb = defensive_rebounds
+                    ))
     
     avgs <-   box_scores %>%  
         group_by(athlete_display_name) %>%
@@ -771,9 +804,24 @@ player.avg.vs.opp <- function(players, opp,
   # splitting shooting stats in box scores
   box.scores <-   box_scores %>% 
                     dplyr::filter(min >0) %>% 
-                    tidyr::separate(fg, sep = "-", into = c("fgm","fga")) %>%
-                    tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
-                    tidyr::separate(ft, sep = "-", into = c("ftm","fta")) %>%
+                    rename(c(
+                      fgm = field_goals_made,
+                      fga = field_goals_attempted,
+                      fg3m = three_point_field_goals_made,
+                      fg3a = three_point_field_goals_attempted,
+                      ftm = free_throws_made,
+                      fta = free_throws_attempted,
+                      min = minutes,
+                      pts = points,
+                      reb = rebounds,
+                      ast = assists,
+                      stl = steals,
+                      blk = blocks,
+                      to = turnovers,
+                      pf = fouls,
+                      oreb = offensive_rebounds,
+                      dreb = defensive_rebounds 
+                    )) %>%
                     mutate(athlete_display_name = tolower(athlete_display_name))
   
   for(i in 1:length(players)){
@@ -805,7 +853,7 @@ player.avg.vs.opp <- function(players, opp,
               ftmAvg = mean(as.numeric(ftm), na.rm = TRUE),
               ftaAvg = mean(as.numeric(fta), na.rm = TRUE),
               orebAvg = mean(as.numeric(oreb), na.rm = TRUE),
-              dreb = mean(as.numeric(dreb), na.rm = TRUE),
+              drebAvg = mean(as.numeric(dreb), na.rm = TRUE),
               rebAvg = mean(as.numeric(reb), na.rm = TRUE),
               astAvg = mean(as.numeric(ast), na.rm = TRUE),
               stlAvg = mean(as.numeric(stl), na.rm = TRUE),
