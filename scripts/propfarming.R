@@ -251,22 +251,23 @@ dbDisconnect(conn)
 # the most recent harvest and determine if over or under won
 # The boxscores game_date is actual date + 1, to pull yesterday = use today date
 # boxscores are not updated until late  night after all games complete
-boxscore.most.recent <- boxscore.player %>% 
+boxscore.most.recent <- boxscore.player %>%
+                            mutate(game_id = as.character(game_id)) %>%
                             filter(game_id %in% games.yesterday$game_id)
 
 
 # processing the box scores
-boxscore.most.recent <- boxscore.most.recent %>%
-    tidyr::separate(fg3, sep = "-", into = c("fg3m","fg3a")) %>%
-    select(game_id, athlete_id, min, pts, reb, ast, stl, blk, fg3m, to) %>% 
-    rename(c(minAct = min,
-             ptsAct = pts,
-             rebAct = reb,
-             astAct = ast,
-             stlAct = stl,
-             blkAct = blk,
-             fg3mAct = fg3m,
-             toAct = to)
+boxscore.most.recent <- boxscore.most.recent %>% 
+    select(game_id, athlete_id, minutes, points, rebounds, assists, steals, 
+           blocks, three_point_field_goals_made, turnovers) %>% 
+    rename(c(minAct = minutes,
+             ptsAct = points,
+             rebAct = rebounds,
+             astAct = assists,
+             stlAct = steals,
+             blkAct = blocks,
+             fg3mAct = three_point_field_goals_made,
+             toAct = turnovers)
            ) %>%
     mutate(athlete_id = as.numeric(athlete_id),
            minAct = as.integer(minAct),       
