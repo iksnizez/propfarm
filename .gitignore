@@ -5,6 +5,7 @@
 data/
 output/
 "props  notes.txt"
+scripts/scratch/
 scripts/scratch.R
 scripts/dbupdate.R
 scripts/Lfifteen.R
