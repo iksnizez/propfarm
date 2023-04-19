@@ -34,9 +34,6 @@ games.today <- espn_nba_scoreboard (season = today.date.char)
 games.yesterday <- espn_nba_scoreboard (season = yesterday.date.char)
 games.tomorrow <- espn_nba_scoreboard (season = tomorrow.date.char)
 
-# play in games 2023
-play.in.ids1 <- c(espn_nba_scoreboard (season = 20230411)$game_id)
-play.in.ids2 <- c(espn_nba_scoreboard (season = 20230412)$game_id)
 #####
 
 ### retrieving the player boxscore and schedule for the season, 
@@ -44,36 +41,43 @@ play.in.ids2 <- c(espn_nba_scoreboard (season = 20230412)$game_id)
 boxscore.player <- hoopR::load_nba_player_box(s) 
 
 ###############
-# adding in the playin games to the boxscores
+# adding in the playin + playoff  games to the boxscores
 # originally used  in prop farm when the boxscore wasn't updating at the end of 23
 ##########
-missing.loads <- play.in.ids1
-
-for(g in 1:length(missing.loads)){
-    gids <- missing.loads[g]
-    # create the main df that the other games will merge to
-    if(g == 1){
-        missing <- hoopR::espn_nba_player_box(gids)
-        missing$game_id <- gids
-        missing$game_date <- as.Date("2023-04-11")
-    } else{
-        temp <- hoopR::espn_nba_player_box(gids)
-        temp$game_id <- gids
-        temp$game_date <- as.Date("2023-04-11")
-        missing <- rbind(missing, temp)
+# missing dates need to be added as they happen
+missing.game.dates <- c(
+    "2023-04-11", "2023-04-12", "2023-04-14", "2023-04-15",  "2023-04-16", 
+    "2023-04-17", "2023-04-18"
+)
+for (i in missing.game.dates){
+    gm.date  <-  gsub("-", "" , i,)
+    gids <- c(espn_nba_scoreboard (season = gm.date)$game_id)
+    
+    if(i == missing.game.dates[1]){
+        for(j in gids){
+            if(j == gids[1]){
+                missing <- hoopR::espn_nba_player_box(j)
+                missing$game_id <- j
+                missing$game_date <- as.Date(i)
+            } else{
+                temp <- hoopR::espn_nba_player_box(j)
+                temp$game_id <- j
+                temp$game_date <- as.Date(i)
+                missing <- rbind(missing, temp)
+            }
+        }
+    }
+    else{
+        for(j in gids){
+            temp <- hoopR::espn_nba_player_box(j)
+            temp$game_id <- j
+            temp$game_date <- as.Date(i)
+            missing <- rbind(missing, temp)
+        }
     }
 }
-# replace with new date
-missing.loads <-  play.in.ids2
-for(g in 1:length(missing.loads)){
-    gids <- missing.loads[g]
-    # create the main df that the other games will merge to
-    temp <- hoopR::espn_nba_player_box(gids)
-    temp$game_id <- gids
-    temp$game_date <- as.Date("2023-04-12")
-    missing <- rbind(missing, temp)
-}
-#
+
+# merging back to season boxscore data
 boxscore.player <- rbind(boxscore.player, missing, fill=TRUE) %>%
     arrange(athlete_id, desc(game_date)) 
 ##################
