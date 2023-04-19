@@ -10,8 +10,8 @@ library(rvest) # html scraping
 library(zoo) # rolling averages
 #RETICULATE_PYTHON="../propfarmVenv/Scripts/python"
 #library(reticulate) # running python script to get the odds scrape
-source("scripts/functions/datacrackers.R")
-source("scripts/functions/dbhelpers.R")
+source("scripts/functions/NBAdatacrackers.R")
+source("scripts/functions/NBAdbhelpers.R")
 
 # full player info history
 #hoopR::nba_commonallplayers(season="2022-23")
@@ -34,19 +34,61 @@ games.today <- espn_nba_scoreboard (season = today.date.char)
 games.yesterday <- espn_nba_scoreboard (season = yesterday.date.char)
 games.tomorrow <- espn_nba_scoreboard (season = tomorrow.date.char)
 
+# play in games 2023
+play.in.ids1 <- c(espn_nba_scoreboard (season = 20230411)$game_id)
+play.in.ids2 <- c(espn_nba_scoreboard (season = 20230412)$game_id)
+#####
+
 ### retrieving the player boxscore and schedule for the season, 
 # this will be used to access players that are playing today and agg stats
-boxscore.player <- hoopR::load_nba_player_box(s) %>%
-                        # FILTER OUT ASG
-                        filter(game_id != 401524696) %>%
-                        # change generic positions 
-                        mutate(
-                            athlete_position_abbreviation = case_when(
-                                athlete_position_abbreviation == "G" ~ "SG",
-                                athlete_position_abbreviation == "F" ~ "SF",
-                                TRUE ~ athlete_position_abbreviation
-                            )
-                        )
+boxscore.player <- hoopR::load_nba_player_box(s) 
+
+###############
+# adding in the playin games to the boxscores
+# originally used  in prop farm when the boxscore wasn't updating at the end of 23
+##########
+missing.loads <- play.in.ids1
+
+for(g in 1:length(missing.loads)){
+    gids <- missing.loads[g]
+    # create the main df that the other games will merge to
+    if(g == 1){
+        missing <- hoopR::espn_nba_player_box(gids)
+        missing$game_id <- gids
+        missing$game_date <- as.Date("2023-04-11")
+    } else{
+        temp <- hoopR::espn_nba_player_box(gids)
+        temp$game_id <- gids
+        temp$game_date <- as.Date("2023-04-11")
+        missing <- rbind(missing, temp)
+    }
+}
+# replace with new date
+missing.loads <-  play.in.ids2
+for(g in 1:length(missing.loads)){
+    gids <- missing.loads[g]
+    # create the main df that the other games will merge to
+    temp <- hoopR::espn_nba_player_box(gids)
+    temp$game_id <- gids
+    temp$game_date <- as.Date("2023-04-12")
+    missing <- rbind(missing, temp)
+}
+#
+boxscore.player <- rbind(boxscore.player, missing, fill=TRUE) %>%
+    arrange(athlete_id, desc(game_date)) 
+##################
+
+boxscore.player <- boxscore.player %>%
+    # FILTER OUT ASG
+    filter(game_id != 401524696) %>%
+    # change generic positions 
+    mutate(
+        athlete_position_abbreviation = case_when(
+            athlete_position_abbreviation == "G" ~ "SG",
+            athlete_position_abbreviation == "F" ~ "SF",
+            TRUE ~ athlete_position_abbreviation
+        )
+    )
 
 schedule <- load_nba_schedule(s)
 
