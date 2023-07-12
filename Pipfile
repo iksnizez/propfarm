@@ -12,6 +12,12 @@ requests = "*"
 datetime = "*"
 jupyterlab = "*"
 fsspec = "*"
+pybaseball = "*"
+mlb-statsapi = "*"
+nba-api = "*"
+mysql-connector-python = "*"
+pymysql = "*"
+sqlalchemy = "*"
 
 [dev-packages]
 
