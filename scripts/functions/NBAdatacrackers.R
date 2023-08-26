@@ -7,7 +7,7 @@ library(tidyr)
 ####################
 update.default.team.data <- function(){
     # data to join with default data frame
-    TeamID <- c("1610612741", "1610612744", "1610612766", "1610612762", "1610612750", "1610612749", "1610612752","1610612743", "1610612764", "1610612763", "1610612737", "1610612757", "1610612742", "1610612755", "1610612748", "1610612756","1610612751", "1610612747", "1610612745", "1610612738", "1610612758", "1610612761", "1610612759", "1610612739","1610612753", "1610612746", "1610612754", "1610612740", "1610612760", "1610612765")
+    team_id <- c("1610612741", "1610612744", "1610612766", "1610612762", "1610612750", "1610612749", "1610612752","1610612743", "1610612764", "1610612763", "1610612737", "1610612757", "1610612742", "1610612755", "1610612748", "1610612756","1610612751", "1610612747", "1610612745", "1610612738", "1610612758", "1610612761", "1610612759", "1610612739","1610612753", "1610612746", "1610612754", "1610612740", "1610612760", "1610612765")
     teamId_hoopr <- c(4,9,30,26,16,15,18,7,27,29,1,22,6,20,14,21,17,13,10,2,23,28,24,5,19,12,11,3,25,8)
     team_abb <- c("CHI","GS","CHA","UTAH","MIN","MIL","NY","DEN","WSH","MEM","ATL","POR","DAL","PHI","MIA","PHX","BKN","LAL","HOU","BOS","SAC","TOR","SA","CLE","ORL","LAC","IND","NO","OKC","DET")
     teamName_nba <- c("Chicago","Golden State","Charlotte","Utah","Minnesota","Milwaukee","New York","Denver","Washington","Memphis","Atlanta","Portland","Dallas","Philadelphia","Miami","Phoenix","Brooklyn","L.A. Lakers","Houston","Boston","Sacramento","Toronto","San Antonio","Cleveland","Orlando","LA Clippers","Indiana","New Orleans","Oklahoma City","Detroit")
@@ -16,9 +16,9 @@ update.default.team.data <- function(){
     to_join <- cbind(to_join, TeamID)
     
     # joining the 2 data frames
-    updated <- merge(data.frame(hoopR::nba_teams), data.frame(to_join), by="TeamID")
+    updated <- merge(as.data.frame(hoopR::nba_teams()), as.data.frame(to_join), by="team_id")
     
-    
+ 
     ### creating lookup vectors to use with lookup function - 1 for NBA team ID and 1 for hoopR team id
     #getLongTeamId <- lookup.team$TeamID
     #names(getLongTeamId) <- lookup.team$team_abb

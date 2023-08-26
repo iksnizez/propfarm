@@ -18,6 +18,7 @@ nba-api = "*"
 mysql-connector-python = "*"
 pymysql = "*"
 sqlalchemy = "*"
+py-ball = "*"
 
 [dev-packages]
 
