@@ -21,8 +21,9 @@ library(zoo)
 season = "2022-23"
 s = 2023
 n.games <- 3
+date_change <-  0 ##<<<<<<<<<<<<<<<<<<<<<<<< <<<<<<<<<<<<<<<< ######use negative for going back days
 cutoff_date <- Sys.Date() - 12
-search.date <- Sys.Date() 
+search.date <- Sys.Date() + date_change
 today.date.char <- format(search.date, "%Y%m%d")
 yesterday.date.char <- format(search.date - 1, "%Y%m%d")  #using to look for B2Bs
 tomorrow.date.char <- format(search.date + 1, "%Y%m%d")   #using to look for B2Bs
@@ -286,7 +287,8 @@ pfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20, pla
 
 ### retrieving the player boxscore and schedule for the season, 
 # this will be used to access players that are playing today and agg stats
-boxscore.player <- wehoop::load_wnba_player_box(s) 
+boxscore.player <- wehoop::load_wnba_player_box(s) %>% 
+                    filter(game_date <= (search.date + date_change) )
 
 boxscore.player <- boxscore.player %>%
     # FILTER OUT ASG
@@ -371,7 +373,7 @@ stat.harvest <- stat.harvest %>%
 conn <- harvestDBconnect(league='wnba')
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
-odds.date <- format(Sys.Date(), "%Y-%m-%d")
+odds.date <- format(Sys.Date() + date_change, "%Y-%m-%d")
 query <- "SELECT 
             p.player playerName, p.wehoopId, o.playerId actnetPlayerId, p.joinName, o.date, o.prop, o.line, o.oOdds, o.uOdds
           FROM odds o
@@ -391,8 +393,8 @@ dbDisconnect(conn)
 
 
 # store the players from the harvest data that did not have any betting info
-missing.players.odds <- setdiff(stat.harvest$join.names, betting.table$joinName)
-missing.players.odds
+# missing.players.odds <- setdiff(stat.harvest$join.names, betting.table$joinName)
+# missing.players.odds
 #right join with betting table on the right so that only players with lines/odds are kept
 harvest <- right_join(stat.harvest, 
                       betting.table, 
@@ -458,19 +460,19 @@ harvest <- harvest %>%
     rename(c(team = team_abbreviation,
              player = athlete_display_name,
              pos = athlete_position_abbreviation)
-    ) 
+    ) %>%
+    select(-c(playerName, wehoopId, actnetPlayerId))
 
 #### need to see if the espn calls have betting info
 #game.lines.today <- games.betting.info(gids.today)
 #harvest <- harvest %>% left_join(game.lines.today, by="game_id")
 
 crop <- harvest %>%
-    select(player, team, opp, 
-           ptsOscore, ptsUscore, rebOscore, rebUscore, astOscore, astUscore, fg3mOscore, fg3mUscore,
-           ptsAvg, ptsSynth, line_pts, 
-           rebAvg, rebSynth, line_reb, 
-           astAvg, astSynth, line_ast, 
-           fg3mAvg, fg3mSynth, line_threes) 
+    select(player, team, opp, minAvg,
+           ptsAvg, ptsSynth, line_pts, ptsOscore, ptsUscore, 
+           rebAvg, rebSynth, line_reb,rebOscore, rebUscore, 
+           astAvg, astSynth, line_ast, astOscore, astUscore, 
+           fg3mAvg, fg3mSynth, line_threes, fg3mOscore, fg3mUscore) 
 
 crop %>% View()
 
@@ -497,7 +499,14 @@ minutes.boosted <- stat.harvest %>%
 ######
 
 
+conn <- harvestDBconnect(league='wnba')
+dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
+dbWriteTable(conn, name = "props", value= harvest, row.names = FALSE, overwrite = FALSE, append = TRUE)
+#dbx::dbxInsert(conn=conn, table="props", records = harvest)
+
+dbSendQuery(conn, "SET GLOBAL local_infile = false;")
+dbDisconnect(conn)
 
 
 
