@@ -18,15 +18,43 @@ library(zoo)
 # Setting variables and hitting api
 ##################
 ### static parameters used throughout the script
-season = "2022-23"
-s = 2023
+league <- 'wnba'
+season  <-  "2022-23"
+s <-  2023
 n.games <- 3
 date_change <-  0 ##<<<<<<<<<<<<<<<<<<<<<<<< <<<<<<<<<<<<<<<< ######use negative for going back days
 cutoff_date <- Sys.Date() - 12
 search.date <- Sys.Date() + date_change
+
+# boxscore  will be used to access players that are playing today and agg stats
+boxscore.player <- wehoop::load_wnba_player_box(s) %>% 
+                        filter(game_date <= search.date )
+
+# calculating previous game date
+prev.game.dates <- sort(boxscore.player$game_date %>% unique(), decreasing = TRUE)
+if(is.na(match(search.date, prev.game.dates))){
+    prev.game.index <- 1
+} else{
+    prev.game.index <- match(search.date, prev.game.dates) - 1
+}
+ # previous game date
+prev.game.date <- prev.game.dates[prev.game.index]
+
+# calculating next game date
+season.game.dates <- (wehoop::wnba_schedule(season = most_recent_wnba_season()) %>%
+                        select(game_date_est) %>%
+                        mutate(game_date_est = as.Date(game_date_est)))$game_date_est %>% 
+                        unique() %>%
+                        sort(decreasing = TRUE)
+                      
+next.game.index <- match(search.date, season.game.dates) - 1
+
+#next game date
+next.game.date <- season.game.dates[next.game.index]
+
 today.date.char <- format(search.date, "%Y%m%d")
-yesterday.date.char <- format(search.date - 1, "%Y%m%d")  #using to look for B2Bs
-tomorrow.date.char <- format(search.date + 1, "%Y%m%d")   #using to look for B2Bs
+yesterday.date.char <- format(prev.game.date, "%Y%m%d")  #using to look for B2Bs
+tomorrow.date.char <- format(next.game.date, "%Y%m%d")   #using to look for B2Bs
 
 ### grab the games playing today, tomorrow and yesterday
 games.today <- espn_wnba_scoreboard (season = today.date.char)
@@ -286,10 +314,6 @@ pfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20, pla
 ########
 
 ### retrieving the player boxscore and schedule for the season, 
-# this will be used to access players that are playing today and agg stats
-boxscore.player <- wehoop::load_wnba_player_box(s) %>% 
-                    filter(game_date <= (search.date + date_change) )
-
 boxscore.player <- boxscore.player %>%
     # FILTER OUT ASG
     filter(game_id != 401558893) %>%
@@ -314,10 +338,6 @@ player.info <- wehoop::wnba_commonallplayers(season="2022-23")$CommonAllPlayers 
         TEAM_ABBREVIATION == "NYL" ~ "NY",
         TRUE ~ TEAM_ABBREVIATION
     ))
-
-
-
-
 
 ##################
 # gathering teams and players playing today
@@ -370,10 +390,10 @@ stat.harvest <- stat.harvest %>%
 # scrape odds data and join to player harvest data
 ##################
 
-conn <- harvestDBconnect(league='wnba')
+conn <- harvestDBconnect(league=league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
-odds.date <- format(Sys.Date() + date_change, "%Y-%m-%d")
+odds.date <- format(search.date, "%Y-%m-%d")
 query <- "SELECT 
             p.player playerName, p.wehoopId, o.playerId actnetPlayerId, p.joinName, o.date, o.prop, o.line, o.oOdds, o.uOdds
           FROM odds o
@@ -388,8 +408,6 @@ betting.table <- dbGetQuery(conn, paste0(query, odds.date, "'")) %>%
 # close conns
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
-
-
 
 
 # store the players from the harvest data that did not have any betting info
@@ -476,6 +494,108 @@ crop <- harvest %>%
 
 crop %>% View()
 
+# load harvest scores to the db
+conn <- harvestDBconnect(league=league)
+dbSendQuery(conn, "SET GLOBAL local_infile = true;")
+
+dbWriteTable(conn, name = "props", value= harvest, row.names = FALSE, overwrite = FALSE, append = TRUE)
+#dbx::dbxInsert(conn=conn, table="props", records = harvest)
+
+dbSendQuery(conn, "SET GLOBAL local_infile = false;")
+dbDisconnect(conn)
+
+
+#########
+# determining winners and losers
+#########
+
+# filtering to only the most recent games for the actual stats to add to
+# the most recent harvest and determine if over or under won
+# The boxscores game_date is actual date + 1, to pull yesterday = use today date
+# boxscores are not updated until late  night after all games complete
+boxscore.most.recent <- boxscore.player %>%
+    mutate(game_id = as.character(game_id)) %>%
+    filter(game_id %in% games.yesterday$game_id)
+
+# processing the box scores
+boxscore.most.recent <- boxscore.most.recent %>% 
+    select(game_id, athlete_id, minutes, points, rebounds, assists, 
+           three_point_field_goals_made, steals, blocks, turnovers
+    ) %>% 
+    rename(c(minAct = minutes,
+             ptsAct = points,
+             rebAct = rebounds,
+             astAct = assists,
+             stlAct = steals,
+             blkAct = blocks,
+             fg3mAct = three_point_field_goals_made,
+             toAct = turnovers
+            )
+    ) %>%
+    mutate(athlete_id = as.numeric(athlete_id),
+           minAct = as.integer(minAct),       
+           ptsAct = as.integer(ptsAct),
+           rebAct = as.integer(rebAct),
+           astAct = as.integer(astAct),
+           stlAct = as.integer(stlAct),
+           blkAct = as.integer(blkAct),
+           fg3mAct = as.integer(fg3mAct),
+           toAct = as.integer(toAct),
+           praAct = ptsAct + rebAct + astAct,
+           prAct = ptsAct + rebAct,
+           paAct = ptsAct  + astAct,
+           raAct = rebAct + astAct,
+           sbAct = stlAct + blkAct
+    )
+
+# pulling the most recent harvest to add actual and calculate wins
+conn <- harvestDBconnect()
+dbSendQuery(conn, "SET GLOBAL local_infile = true;")
+
+yest.prop.query <- paste0("SELECT * FROM props WHERE date = '", prev.game.date, "'")
+
+yesterday.harvest <- dbGetQuery(conn, yest.prop.query)
+
+# filtering the box scores for the players of interest and selecting the stats
+updates <- boxscore.most.recent %>% 
+                select(athlete_id, minAct, ptsAct, rebAct, astAct, 
+                       stlAct, blkAct, fg3mAct, toAct, praAct, 
+                       prAct, paAct, raAct, sbAct) %>%
+                filter(athlete_id %in% yesterday.harvest$athlete_id)
+
+# players who were in the harvest data but did not show up in the boxscore
+missing.boxscores <- setdiff(boxscore.most.recent$athlete_id %>% unique(),
+                             yesterday.harvest$athlete_id %>% unique())
+missing.players <- yesterday.harvest %>% filter(athlete_id %in% missing.boxscores) %>% select(player, athlete_id)
+missing.players     
+
+# updating the data pulled from the database with the scores from the last game
+yesterday.harvest <- rows_update(yesterday.harvest, updates, by="athlete_id")
+
+
+# calculating over under winners with the stats 
+yesterday.harvest <- yesterday.harvest %>%
+    mutate(
+        ptsWin = ifelse(ptsAct > line_pts, "o", "u"),
+        rebWin = ifelse(rebAct > line_reb, "o", "u"),
+        astWin = ifelse(astAct > line_ast, "o", "u"),
+        stlWin = NA, #ifelse(stlAct > line_STL, "o", "u"),
+        blkWin = NA, #ifelse(blkAct > line_BLK, "o", "u"),
+        fg3mWin = ifelse(fg3mAct > line_threes, "o", "u"),
+        praWin = NA, #ifelse(praAct > line_PTSREBAST, "o", "u"),
+        prWin = NA, #ifelse(prAct > line_PTSREB, "o", "u"),
+        paWin = NA, #ifelse(paAct > line_PTSAST, "o", "u"),
+        raWin = NA, #ifelse(raAct > line_REBAST, "o", "u"),
+        sbWin = NA #ifelse(sbAct > line_STLBLK, "o", "u")
+    )
+
+# sending the data back to the db for updating the table
+dbx::dbxUpdate(conn, "props", yesterday.harvest, where_cols = c("game_id", "athlete_id", "date"))
+
+
+dbSendQuery(conn, "SET GLOBAL local_infile = false;")
+dbDisconnect(conn)
+#####
 
 ###########
 # change in minutes
@@ -499,14 +619,7 @@ minutes.boosted <- stat.harvest %>%
 ######
 
 
-conn <- harvestDBconnect(league='wnba')
-dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
-dbWriteTable(conn, name = "props", value= harvest, row.names = FALSE, overwrite = FALSE, append = TRUE)
-#dbx::dbxInsert(conn=conn, table="props", records = harvest)
-
-dbSendQuery(conn, "SET GLOBAL local_infile = false;")
-dbDisconnect(conn)
 
 
 
