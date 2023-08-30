@@ -549,7 +549,7 @@ boxscore.most.recent <- boxscore.most.recent %>%
     )
 
 # pulling the most recent harvest to add actual and calculate wins
-conn <- harvestDBconnect()
+conn <- harvestDBconnect(league=league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
 yest.prop.query <- paste0("SELECT * FROM props WHERE date = '", prev.game.date, "'")
@@ -596,6 +596,7 @@ dbx::dbxUpdate(conn, "props", yesterday.harvest, where_cols = c("game_id", "athl
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 #####
+
 
 ###########
 # change in minutes

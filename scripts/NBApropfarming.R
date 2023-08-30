@@ -13,21 +13,47 @@ library(zoo) # rolling averages
 source("scripts/functions/NBAdatacrackers.R")
 source("scripts/functions/NBAdbhelpers.R")
 
-# full player info history
-#hoopR::nba_commonallplayers(season="2022-23")
-
 ##################
 # Setting variables and hitting api
 ##################
 ### static parameters used throughout the script
-season = "2022-23"
-s = 2023
+league <- 'nba'
+season  <-  "2023-24"
+s <-  2023
 n.games <- 3
+date_change <-  0 ##<<<<<<<<<<<<<<<<<<<<<<<< <<<<<<<<<<<<<<<< ######use negative for going back days
 cutoff_date <- Sys.Date() - 12
-search.date <- Sys.Date()
+search.date <- Sys.Date() + date_change
+
+# boxscore  will be used to access players that are playing today and agg stats
+boxscore.player <- load_nba_player_box(s) %>% 
+                        filter(game_date <= search.date )
+
+# calculating previous game date
+prev.game.dates <- sort(boxscore.player$game_date %>% unique(), decreasing = TRUE)
+if(is.na(match(search.date, prev.game.dates))){
+    prev.game.index <- 1
+} else{
+    prev.game.index <- match(search.date, prev.game.dates) - 1
+}
+# previous game date
+prev.game.date <- prev.game.dates[prev.game.index]
+
+# calculating next game date
+season.game.dates <- (nba_schedule(season = most_recent_nba_season()) %>%
+                          select(game_date_est) %>%
+                          mutate(game_date_est = as.Date(game_date_est)))$game_date_est %>% 
+    unique() %>% 
+    sort(decreasing = TRUE)
+
+next.game.index <- match(search.date, season.game.dates) - 1
+
+#next game date
+next.game.date <- season.game.dates[next.game.index]
+
 today.date.char <- format(search.date, "%Y%m%d")
-yesterday.date.char <- format(search.date - 1, "%Y%m%d")  #using to look for B2Bs
-tomorrow.date.char <- format(search.date + 1, "%Y%m%d")   #using to look for B2Bs
+yesterday.date.char <- format(prev.game.date, "%Y%m%d")  #using to look for B2Bs
+tomorrow.date.char <- format(next.game.date, "%Y%m%d")   #using to look for B2Bs
 
 ### grab the games playing today, tomorrow and yesterday
 games.today <- espn_nba_scoreboard (season = today.date.char)
@@ -36,50 +62,46 @@ games.tomorrow <- espn_nba_scoreboard (season = tomorrow.date.char)
 
 #####
 
-### retrieving the player boxscore and schedule for the season, 
-# this will be used to access players that are playing today and agg stats
-boxscore.player <- hoopR::load_nba_player_box(s) 
-
 ###############
 # adding in the playin + playoff  games to the boxscores
 # originally used  in prop farm when the boxscore wasn't updating at the end of 23
 ##########
 # missing dates need to be added as they happen
-missing.game.dates <- c(
-    "2023-04-11", "2023-04-12", "2023-04-14", "2023-04-15",  "2023-04-16", 
-    "2023-04-17", "2023-04-18"
-)
-for (i in missing.game.dates){
-    gm.date  <-  gsub("-", "" , i,)
-    gids <- c(espn_nba_scoreboard (season = gm.date)$game_id)
-    
-    if(i == missing.game.dates[1]){
-        for(j in gids){
-            if(j == gids[1]){
-                missing <- hoopR::espn_nba_player_box(j)
-                missing$game_id <- j
-                missing$game_date <- as.Date(i)
-            } else{
-                temp <- hoopR::espn_nba_player_box(j)
-                temp$game_id <- j
-                temp$game_date <- as.Date(i)
-                missing <- rbind(missing, temp)
-            }
-        }
-    }
-    else{
-        for(j in gids){
-            temp <- hoopR::espn_nba_player_box(j)
-            temp$game_id <- j
-            temp$game_date <- as.Date(i)
-            missing <- rbind(missing, temp)
-        }
-    }
-}
-
-# merging back to season boxscore data
-boxscore.player <- rbind(boxscore.player, missing, fill=TRUE) %>%
-    arrange(athlete_id, desc(game_date)) 
+# missing.game.dates <- c(
+#     "2023-04-11", "2023-04-12", "2023-04-14", "2023-04-15",  "2023-04-16", 
+#     "2023-04-17", "2023-04-18"
+# )
+# for (i in missing.game.dates){
+#     gm.date  <-  gsub("-", "" , i,)
+#     gids <- c(espn_nba_scoreboard (season = gm.date)$game_id)
+#     
+#     if(i == missing.game.dates[1]){
+#         for(j in gids){
+#             if(j == gids[1]){
+#                 missing <- hoopR::espn_nba_player_box(j)
+#                 missing$game_id <- j
+#                 missing$game_date <- as.Date(i)
+#             } else{
+#                 temp <- hoopR::espn_nba_player_box(j)
+#                 temp$game_id <- j
+#                 temp$game_date <- as.Date(i)
+#                 missing <- rbind(missing, temp)
+#             }
+#         }
+#     }
+#     else{
+#         for(j in gids){
+#             temp <- hoopR::espn_nba_player_box(j)
+#             temp$game_id <- j
+#             temp$game_date <- as.Date(i)
+#             missing <- rbind(missing, temp)
+#         }
+#     }
+# }
+# 
+# # merging back to season boxscore data
+# boxscore.player <- rbind(boxscore.player, missing, fill=TRUE) %>%
+#     arrange(athlete_id, desc(game_date)) 
 ##################
 
 boxscore.player <- boxscore.player %>%
@@ -96,7 +118,7 @@ boxscore.player <- boxscore.player %>%
 
 schedule <- load_nba_schedule(s)
 
-player.info <- hoopR::nba_commonallplayers(season="2022-23", is_only_current_season = 1)$CommonAllPlayers %>%
+player.info <- hoopR::nba_commonallplayers(season=season, is_only_current_season = 1)$CommonAllPlayers %>%
                         mutate(TEAM_ABBREVIATION = case_when(
                                     TEAM_ABBREVIATION == "NOP" ~ "NO",
                                     TEAM_ABBREVIATION == "NYK" ~ "NY",
@@ -107,9 +129,6 @@ player.info <- hoopR::nba_commonallplayers(season="2022-23", is_only_current_sea
                                     TRUE ~ TEAM_ABBREVIATION
                         ))
 
-#save paths
-betting.file.path <- paste("data/", search.date, "_odds.csv", sep="")
-harvest.file.path <- paste("output/", search.date, "_harvest.csv", sep="")
 
 # adding the additional IDs and team names to the nba_teams 
 # the default dataframe that loads with the package. using function from datacrackers.R
@@ -152,63 +171,49 @@ stat.harvest <- propfarming(boxscore.player,
 #addding date
 stat.harvest$date <- search.date
 # creating name column without suffixes to join with betting data until ID list is compiled
-suffix.rep <- c(" Jr."="", " Sr."="", " III"="", " IV"="", " II"="", 
-                "\\."="", "'"="", "'"="")
+suffix.rep <- c("\\."="", "'"="", "'"=""
+                #" Jr."="", " Sr."="", " III"="", " IV"="", " II"="",    # removing the suffix misses to many matches.
+                )
 # updating generic positions with 1 of 5
 ##pos.rep <- c("^G"="SG", "^F"="PF")
 stat.harvest <- stat.harvest %>%
                     mutate(
                         join.names = tolower(stringr::str_replace_all(athlete_display_name, suffix.rep))
                     ) 
-
-# flag players who have seen large jump in minutes
-minutes.boosted <- stat.harvest %>% 
-                        mutate(minL3diff = minAvgL3 - minAvg - (minstd * 1.2),
-                               minL10diff = minAvgL10 - minAvg - minstd,
-                               direction =case_when(
-                                   (minL3diff > 0 & minL10diff > 0) ~ "up-ramped",
-                                   (minL3diff > 0 & minL10diff < 0) ~ "up-ramping",
-                                   (minL3diff < 0 & minL10diff > 0) ~ "down-ramping",
-                                   (minL3diff < 0 & minL10diff < 0) ~ "down-ramped",
-                                   TRUE ~ "flat"
-                            )) %>%
-                        filter(minL3diff > 0 | minL10diff > 0) %>%
-                        select(athlete_id,  athlete_display_name, athlete_position_abbreviation, team_abbreviation, 
-                               direction, minAvg,minAvgL3, minAvgL10, minstd, minL3diff, minL10diff) %>%
-                        arrange(direction)
-View(minutes.boosted %>% arrange(desc(direction)))
-
 #####
 
 ##################
 # scrape odds data and join to player harvest data
 ##################
-betting.table <- read.csv(betting.file.path) %>%
-                    pivot_wider(names_from = stat,
-                                values_from = c(line, oOdds, uOdds)) %>%
-                    mutate(
-                        PLAYER= tolower(stringr::str_replace_all(PLAYER, suffix.rep)),
-                        team = case_when(
-                            team == "NOP" ~ "NO",
-                            team == "NYK" ~ "NY",
-                            team == "SAS" ~ "SA",
-                            team == "UTA" ~ "UTAH",
-                            team == "WAS" ~ "WSH",
-                            team == "GSW" ~ "GS",
-                            TRUE ~ team
-                    ))
+conn <- harvestDBconnect(league=league)
+dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
+odds.date <- format(search.date, "%Y-%m-%d")
+query <- "SELECT 
+            p.player playerName, p.hooprId, o.playerId actnetPlayerId, p.joinName, o.date, o.prop, o.line, o.oOdds, o.uOdds
+          FROM odds o
+          INNER JOIN players p ON o.playerId = p.actnetPlayerId
+          WHERE o.date = '"
+
+# flatten a single players odds into a single row
+betting.table <- dbGetQuery(conn, paste0(query, odds.date, "'")) %>%
+    pivot_wider(names_from = prop,
+                values_from = c(line, oOdds, uOdds))
+
+# close conns
+dbSendQuery(conn, "SET GLOBAL local_infile = false;")
+dbDisconnect(conn)
 
 # store the players from the harvest data that did not have any betting info
 missing.players.odds <- setdiff(stat.harvest$join.names, betting.table$PLAYER)
 missing.players.odds
+
 #right join with betting table on the right so that only players with lines/odds are kept
 harvest <- right_join(stat.harvest, 
                       betting.table, 
                       by=c("join.names" = "PLAYER")) %>%
                 select(-team, -date.y, -join.names) %>%
                 rename(c(date = date.x))
-
 #####
 
 ##################
@@ -282,7 +287,7 @@ harvest <- harvest %>% left_join(game.lines.today, by="game_id")
 ##################
 # add current day harvest to database
 ##################
-conn <- harvestDBconnect()
+conn <- harvestDBconnect(league = league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 dbWriteTable(conn, name = "props", value= harvest, row.names = FALSE, overwrite = FALSE, append = TRUE)
 #dbx::dbxInsert(conn=conn, table="props", records = harvest)
@@ -332,16 +337,12 @@ boxscore.most.recent <- boxscore.most.recent %>%
     )
 
 # pulling the most recent harvest to add actual and calculate wins
-conn <- harvestDBconnect()
+conn <- harvestDBconnect(league=league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
-# database table object - represent as lasy table view that needs to be collected
-props.table <- tbl(conn, "props")
-# filtering the table and collecting the data
-yest <- as.numeric(games.yesterday$game_id)
-yesterday.harvest <- props.table %>% 
-                        filter(game_id %in% yest) %>%
-                        collect()
+yest.prop.query <- paste0("SELECT * FROM props WHERE date = '", prev.game.date, "'")
+
+yesterday.harvest <- dbGetQuery(conn, yest.prop.query)
 
 # filtering the box scores for the players of interest and selecting the stats
 updates <- boxscore.most.recent %>% 
@@ -386,11 +387,25 @@ dbDisconnect(conn)
 #write.csv(x = stat.harvest,file =  harvest.file.path, row.names=FALSE)
 #write.csv(x = yesterday.harvest,file =  "output/dbBackup.csv", row.names=FALSE)
 
+
 ##################
-##data import - 2022-23 season
+# flag players who have seen large jump in minutes
 ##################
-# search on the year the season ends
-nba_pbp <- hoopR::load_nba_pbp(2023)
+minutes.boosted <- stat.harvest %>% 
+    mutate(minL3diff = minAvgL3 - minAvg - (minstd * 1.2),
+           minL10diff = minAvgL10 - minAvg - minstd,
+           direction =case_when(
+               (minL3diff > 0 & minL10diff > 0) ~ "up-ramped",
+               (minL3diff > 0 & minL10diff < 0) ~ "up-ramping",
+               (minL3diff < 0 & minL10diff > 0) ~ "down-ramping",
+               (minL3diff < 0 & minL10diff < 0) ~ "down-ramped",
+               TRUE ~ "flat"
+           )) %>%
+    filter(minL3diff > 0 | minL10diff > 0) %>%
+    select(athlete_id,  athlete_display_name, athlete_position_abbreviation, team_abbreviation, 
+           direction, minAvg,minAvgL3, minAvgL10, minstd, minL3diff, minL10diff) %>%
+    arrange(direction)
+View(minutes.boosted %>% arrange(desc(direction)))
 #####
 
 ##################
@@ -433,10 +448,6 @@ for (team in teams) {
 team.records %>% arrange(team) %>% select(team, wATS, lATS, tATS)
 #####
 
-##################
-#
-##################
-#####
 
 ##################
 # 
