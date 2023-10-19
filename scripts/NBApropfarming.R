@@ -11,7 +11,7 @@ library(zoo) # rolling averages
 #RETICULATE_PYTHON="../propfarmVenv/Scripts/python"
 #library(reticulate) # running python script to get the odds scrape
 source("scripts/functions/NBAdatacrackers.R")
-source("scripts/functions/NBAdbhelpers.R")
+source("scripts/functions/dbhelpers.R")
 
 ##################
 # Setting variables and hitting api
@@ -34,7 +34,7 @@ prev.game.dates <- sort(boxscore.player$game_date %>% unique(), decreasing = TRU
 if(is.na(match(search.date, prev.game.dates))){
     prev.game.index <- 1
 } else{
-    prev.game.index <- match(search.date, prev.game.dates) - 1
+    prev.game.index <- match(search.date, prev.game.dates) + 1
 }
 # previous game date
 prev.game.date <- prev.game.dates[prev.game.index]
@@ -54,6 +54,8 @@ next.game.date <- season.game.dates[next.game.index]
 today.date.char <- format(search.date, "%Y%m%d")
 yesterday.date.char <- format(prev.game.date, "%Y%m%d")  #using to look for B2Bs
 tomorrow.date.char <- format(next.game.date, "%Y%m%d")   #using to look for B2Bs
+
+rm(season.game.dates)
 
 ### grab the games playing today, tomorrow and yesterday
 games.today <- espn_nba_scoreboard (season = today.date.char)
@@ -198,7 +200,18 @@ query <- "SELECT
 # flatten a single players odds into a single row
 betting.table <- dbGetQuery(conn, paste0(query, odds.date, "'")) %>%
     pivot_wider(names_from = prop,
-                values_from = c(line, oOdds, uOdds))
+                values_from = c(line, oOdds, uOdds, propId))  %>%
+    mutate(
+        PLAYER= tolower(stringr::str_replace_all(PLAYER, suffix.rep)),
+        team = case_when(
+            team == "NOP" ~ "NO",
+            team == "NYK" ~ "NY",
+            team == "SAS" ~ "SA",
+            team == "UTA" ~ "UTAH",
+            team == "WAS" ~ "WSH",
+            team == "GSW" ~ "GS",
+            TRUE ~ team
+        ))
 
 # close conns
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
@@ -311,29 +324,30 @@ boxscore.most.recent <- boxscore.player %>%
 boxscore.most.recent <- boxscore.most.recent %>% 
     select(game_id, athlete_id, minutes, points, rebounds, assists, steals, 
            blocks, three_point_field_goals_made, turnovers) %>% 
-    rename(c(minAct = minutes,
-             ptsAct = points,
-             rebAct = rebounds,
-             astAct = assists,
-             stlAct = steals,
-             blkAct = blocks,
-             fg3mAct = three_point_field_goals_made,
-             toAct = turnovers)
-           ) %>%
+    rename(c(act_min = minutes,
+             act_pts = points,
+             act_reb = rebounds,
+             act_ast = assists,
+             act_stl = steals,
+             act_blk = blocks,
+             act_threes = three_point_field_goals_made,
+             act_to = turnovers
+    )
+    ) %>%
     mutate(athlete_id = as.numeric(athlete_id),
-           minAct = as.integer(minAct),       
-           ptsAct = as.integer(ptsAct),
-           rebAct = as.integer(rebAct),
-           astAct = as.integer(astAct),
-           stlAct = as.integer(stlAct),
-           blkAct = as.integer(blkAct),
-           fg3mAct = as.integer(fg3mAct),
-           toAct = as.integer(toAct),
-           praAct = ptsAct + rebAct + astAct,
-           prAct = ptsAct + rebAct,
-           paAct = ptsAct  + astAct,
-           raAct = rebAct + astAct,
-           sbAct = stlAct + blkAct
+           act_min = as.integer(act_min),       
+           act_pts = as.integer(act_pts),
+           act_reb = as.integer(act_reb),
+           act_ast = as.integer(act_ast),
+           act_stl = as.integer(act_stl),
+           act_blk = as.integer(act_blk),
+           act_threes = as.integer(act_threes),
+           act_to = as.integer(act_to),
+           act_pra = act_pts + act_reb + act_ast,
+           act_pr = act_pts + act_reb,
+           act_pa = act_pts  + act_ast,
+           act_ra = act_reb + act_ast,
+           act_sb = act_stl + act_blk
     )
 
 # pulling the most recent harvest to add actual and calculate wins
@@ -346,9 +360,9 @@ yesterday.harvest <- dbGetQuery(conn, yest.prop.query)
 
 # filtering the box scores for the players of interest and selecting the stats
 updates <- boxscore.most.recent %>% 
-                select(athlete_id, minAct, ptsAct, rebAct, astAct, 
-                       stlAct, blkAct, fg3mAct, toAct, praAct, 
-                       prAct, paAct, raAct, sbAct) %>%
+                select(athlete_id, act_min, act_pts, act_reb, act_ast, 
+                       act_stl, act_blk, act_threes, act_to, act_pra, 
+                       act_pr, act_pa, act_ra, act_sb) %>%
                 filter(athlete_id %in% yesterday.harvest$athlete_id)
 
 # players who were in the harvest data but did not show up in the boxscore
@@ -363,18 +377,18 @@ yesterday.harvest <- rows_update(yesterday.harvest, updates, by="athlete_id")
 # calculating over under winners with the stats 
 yesterday.harvest <- yesterday.harvest %>%
     mutate(
-        ptsWin = ifelse(ptsAct > line_PTS, "o", "u"),
-        rebWin = ifelse(rebAct > line_REB, "o", "u"),
-        astWin = ifelse(astAct > line_AST, "o", "u"),
-        stlWin = ifelse(stlAct > line_STL, "o", "u"),
-        blkWin = ifelse(blkAct > line_BLK, "o", "u"),
-        fg3mWin = ifelse(fg3mAct > line_THREES, "o", "u"),
-        praWin = ifelse(praAct > line_PTSREBAST, "o", "u"),
-        prWin = ifelse(prAct > line_PTSREB, "o", "u"),
-        paWin = ifelse(paAct > line_PTSAST, "o", "u"),
-        raWin = ifelse(raAct > line_REBAST, "o", "u"),
-        sbWin = ifelse(sbAct > line_STLBLK, "o", "u")
-        )
+        win_pts = ifelse(act_pts > line_pts, "o", "u"),
+        win_reb = ifelse(act_reb > line_reb, "o", "u"),
+        win_ast = ifelse(act_ast > line_ast, "o", "u"),
+        win_stl = ifelse(act_stl > line_stl, "o", "u"),
+        win_blk = ifelse(act_blk > line_blk, "o", "u"),
+        win_threes = ifelse(act_threes > line_threes, "o", "u"),
+        win_pra = ifelse(act_pra > line_pra, "o", "u"),
+        win_pr = ifelse(act_pr > line_pr, "o", "u"),
+        Win_pa = ifelse(act_pa > line_pa, "o", "u"),
+        win_ra = ifelse(act_ra > line_ra, "o", "u"),
+        win_sb = ifelse(act_sb > line_sb, "o", "u")
+    )
 
 # sending the data back to the db for updating the table
 dbx::dbxUpdate(conn, "props", yesterday.harvest, where_cols = c("game_id", "athlete_id", "date"))

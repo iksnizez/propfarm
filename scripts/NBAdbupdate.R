@@ -6,7 +6,9 @@ library(dplyr)
 library(stringr)
 source("scripts/functions/dbhelpers.R")
 
-conn <- harvestDBconnect()
+season <- "2022-23"
+
+conn <- harvestDBconnect(league = league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
 ################
@@ -41,7 +43,7 @@ currentRoto <- read.csv("data/rotoId.csv") %>%
                     mutate(join.names = tolower(stringr::str_replace_all(player, suffix.rep))) %>%
                     select(join.names, rotowireId)
 
-p <- hoopR::nba_commonallplayers(season="2022-23")$CommonAllPlayers
+p <- hoopR::nba_commonallplayers(season=season)$CommonAllPlayers
 # creating cleaned name join for NBA names and IDs
 currentNBA <- p %>%
             #filter(ROSTERSTATUS==1) %>%

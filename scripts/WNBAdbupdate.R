@@ -5,7 +5,7 @@ library(jsonlite)
 library(dplyr)
 library(stringr)
 source("scripts/functions/dbhelpers.R")
-#remotes::install_github("sportsdataverse/wehoop")
+remotes::install_github("sportsdataverse/wehoop")
 
 conn <- harvestDBconnect(league='wnba')
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")

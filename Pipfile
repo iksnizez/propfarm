@@ -19,6 +19,7 @@ mysql-connector-python = "*"
 pymysql = "*"
 sqlalchemy = "*"
 py-ball = "*"
+openpyxl = "*"
 
 [dev-packages]
 
