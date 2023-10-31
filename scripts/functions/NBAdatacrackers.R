@@ -868,6 +868,58 @@ player.avg.vs.opp <- function(players, opp,
 
 #####
 
+###############
+# calculating all teams travel +/- throughout the season schedule
+###############
+### this is setup to receive a processed distance matrix with rows and columns named as db teamIds
+### to aid in multi sport use.
+distance.traveled <- function(distanceMatrix){
+  return(0) 
+}
+#####
+
+###############
+# adding in the playin + playoff  games to the boxscores
+# originally used  in prop farm when the boxscore wasn't updating at the end of 23
+##########
+# missing dates need to be added as they happen
+# missing.game.dates <- c(
+#     "2023-04-11", "2023-04-12", "2023-04-14", "2023-04-15",  "2023-04-16", 
+#     "2023-04-17", "2023-04-18"
+# )
+# for (i in missing.game.dates){
+#     gm.date  <-  gsub("-", "" , i,)
+#     gids <- c(espn_nba_scoreboard (season = gm.date)$game_id)
+#     
+#     if(i == missing.game.dates[1]){
+#         for(j in gids){
+#             if(j == gids[1]){
+#                 missing <- hoopR::espn_nba_player_box(j)
+#                 missing$game_id <- j
+#                 missing$game_date <- as.Date(i)
+#             } else{
+#                 temp <- hoopR::espn_nba_player_box(j)
+#                 temp$game_id <- j
+#                 temp$game_date <- as.Date(i)
+#                 missing <- rbind(missing, temp)
+#             }
+#         }
+#     }
+#     else{
+#         for(j in gids){
+#             temp <- hoopR::espn_nba_player_box(j)
+#             temp$game_id <- j
+#             temp$game_date <- as.Date(i)
+#             missing <- rbind(missing, temp)
+#         }
+#     }
+# }
+# 
+# # merging back to season boxscore data
+# boxscore.player <- rbind(boxscore.player, missing, fill=TRUE) %>%
+#     arrange(athlete_id, desc(game_date)) 
+##################
+
 
 ####################
 ## FUNCTION TO CALCULATE PROPFARM PLAYER STATS FROM WNBA BOX

@@ -19,7 +19,7 @@ source("scripts/functions/dbhelpers.R")
 ### static parameters used throughout the script
 league <- 'nba'
 season  <-  "2023-24"
-s <-  2023
+s <-  2024
 n.games <- 3
 date_change <-  0 ##<<<<<<<<<<<<<<<<<<<<<<<< <<<<<<<<<<<<<<<< ######use negative for going back days
 cutoff_date <- Sys.Date() - 12
@@ -39,8 +39,14 @@ if(is.na(match(search.date, prev.game.dates))){
 # previous game date
 prev.game.date <- prev.game.dates[prev.game.index]
 
-# calculating next game date
-season.game.dates <- (nba_schedule(season = most_recent_nba_season()) %>%
+# calculating next game date - 
+season.game.dates <- nba_schedule(season = season)
+#hijacking variable name to extract all-star game gids
+dates.allstar <- season.game.dates %>%
+                    filter(season_type_description == 'All-Star') %>% 
+                    select(game_date)
+
+season.game.dates <- (season.game.dates %>%
                           select(game_date_est) %>%
                           mutate(game_date_est = as.Date(game_date_est)))$game_date_est %>% 
     unique() %>% 
@@ -62,53 +68,10 @@ games.today <- espn_nba_scoreboard (season = today.date.char)
 games.yesterday <- espn_nba_scoreboard (season = yesterday.date.char)
 games.tomorrow <- espn_nba_scoreboard (season = tomorrow.date.char)
 
-#####
-
-###############
-# adding in the playin + playoff  games to the boxscores
-# originally used  in prop farm when the boxscore wasn't updating at the end of 23
-##########
-# missing dates need to be added as they happen
-# missing.game.dates <- c(
-#     "2023-04-11", "2023-04-12", "2023-04-14", "2023-04-15",  "2023-04-16", 
-#     "2023-04-17", "2023-04-18"
-# )
-# for (i in missing.game.dates){
-#     gm.date  <-  gsub("-", "" , i,)
-#     gids <- c(espn_nba_scoreboard (season = gm.date)$game_id)
-#     
-#     if(i == missing.game.dates[1]){
-#         for(j in gids){
-#             if(j == gids[1]){
-#                 missing <- hoopR::espn_nba_player_box(j)
-#                 missing$game_id <- j
-#                 missing$game_date <- as.Date(i)
-#             } else{
-#                 temp <- hoopR::espn_nba_player_box(j)
-#                 temp$game_id <- j
-#                 temp$game_date <- as.Date(i)
-#                 missing <- rbind(missing, temp)
-#             }
-#         }
-#     }
-#     else{
-#         for(j in gids){
-#             temp <- hoopR::espn_nba_player_box(j)
-#             temp$game_id <- j
-#             temp$game_date <- as.Date(i)
-#             missing <- rbind(missing, temp)
-#         }
-#     }
-# }
-# 
-# # merging back to season boxscore data
-# boxscore.player <- rbind(boxscore.player, missing, fill=TRUE) %>%
-#     arrange(athlete_id, desc(game_date)) 
-##################
-
+# filter out all star games once they are in the box score data
 boxscore.player <- boxscore.player %>%
     # FILTER OUT ASG
-    filter(game_id != 401524696) %>%
+    filter(!game_date %in%  dates.allstar) %>%
     # change generic positions 
     mutate(
         athlete_position_abbreviation = case_when(
