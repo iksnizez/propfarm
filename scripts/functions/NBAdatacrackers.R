@@ -876,6 +876,7 @@ player.avg.vs.opp <- function(players, opp,
 distance.traveled <- function(distanceMatrix){
   return(0) 
 }
+
 #####
 
 ###############

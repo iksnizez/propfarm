@@ -1,3 +1,4 @@
+#remotes::install_github("sportsdataverse/hoopR")
 library(hoopR)
 library(DBI)
 library(RMySQL)
@@ -21,7 +22,7 @@ league <- 'nba'
 season  <-  "2023-24"
 s <-  2024
 n.games <- 3
-date_change <-  0 ##<<<<<<<<<<<<<<<<<<<<<<<< <<<<<<<<<<<<<<<< ######use negative for going back days
+date_change <- -1 ##<<<<<<<<<<<<<<<<<<<<<<<< <<<<<<<<<<<<<<<< ######use negative for going back days
 cutoff_date <- Sys.Date() - 12
 search.date <- Sys.Date() + date_change
 
@@ -97,7 +98,7 @@ player.info <- hoopR::nba_commonallplayers(season=season, is_only_current_season
 
 # adding the additional IDs and team names to the nba_teams 
 # the default dataframe that loads with the package. using function from datacrackers.R
-nba_teams <- update.default.team.data()
+##nba_teams <- update.default.team.data()
 #####
 
 ##################
@@ -130,15 +131,14 @@ matchups.today.full <- games.today %>% select(home_team_abb, away_team_abb, game
 # pulling player stats
 stat.harvest <- propfarming(boxscore.player, 
                             team.id.today, 
-                            matchups.today.full, 10,
+                            matchups.today.full, 20,
                             player.info) %>% 
                     ungroup()
 #addding date
 stat.harvest$date <- search.date
 # creating name column without suffixes to join with betting data until ID list is compiled
-suffix.rep <- c("\\."="", "'"="", "'"=""
-                #" Jr."="", " Sr."="", " III"="", " IV"="", " II"="",    # removing the suffix misses to many matches.
-                )
+suffix.rep <- c("\\."="", "'"="", "'"=""," jr"="", " sr"="", " III"="", " IV"="", " II"="",
+                " jr."="", " sr."="", " Jr"="", " Sr"="", " Jr."="", " Sr."="")
 # updating generic positions with 1 of 5
 ##pos.rep <- c("^G"="SG", "^F"="PF")
 stat.harvest <- stat.harvest %>%
@@ -155,15 +155,17 @@ dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
 odds.date <- format(search.date, "%Y-%m-%d")
 query <- "SELECT 
-            p.player playerName, p.hooprId, o.playerId actnetPlayerId, p.joinName, o.date, o.prop, o.line, o.oOdds, o.uOdds
+            p.player PLAYER, t.teamAbbr team, p.hooprId, o.playerId actnetPlayerId, p.joinName, 
+            o.date, o.prop, o.line, o.oOdds, o.uOdds
           FROM odds o
-          INNER JOIN players p ON o.playerId = p.actnetPlayerId
+          INNER JOIN players p ON o.playerId = p.actnetId
+          INNER JOIN teams t on o.teamId = t.actnetTid
           WHERE o.date = '"
 
 # flatten a single players odds into a single row
 betting.table <- dbGetQuery(conn, paste0(query, odds.date, "'")) %>%
     pivot_wider(names_from = prop,
-                values_from = c(line, oOdds, uOdds, propId))  %>%
+                values_from = c(line, oOdds, uOdds))  %>%#, propId))  %>%
     mutate(
         PLAYER= tolower(stringr::str_replace_all(PLAYER, suffix.rep)),
         team = case_when(
@@ -176,6 +178,58 @@ betting.table <- dbGetQuery(conn, paste0(query, odds.date, "'")) %>%
             TRUE ~ team
         ))
 
+# get roto odds from saved file to fill in any missing from actn
+roto <- read.csv(paste0('data\\',search.date, '_odds.csv')) %>%
+    rename(prop = stat) %>% 
+    mutate(
+        prop = case_when(
+            prop == 'PTS' ~ 'pts',
+            prop == 'REB' ~ 'reb',
+            prop == 'AST' ~ 'ast',
+            prop == 'STL' ~ 'stl',
+            prop == 'BLK' ~ 'blk',
+            prop == 'PTSREBAST' ~ 'pra',
+            prop == 'PTSREB' ~ 'pr',
+            prop == 'PTSAST' ~ 'pa',
+            prop == 'REBAST' ~ 'ra',
+            prop == 'STLBLK' ~ 'sb',
+            prop == 'THREES' ~ 'threes',
+            prop == 'TURNOVERS' ~ 'to'
+        ),
+        joinName = tolower(PLAYER),
+        PLAYER = tolower(PLAYER)
+    ) %>% 
+    pivot_wider(names_from = prop,
+                values_from = c(line, oOdds, uOdds))
+
+# list of players in roto but not actn
+missing.actn <- setdiff(tolower(roto$PLAYER), betting.table$PLAYER)
+
+#filter roto widen df to only missing actn players
+roto <- roto %>% 
+            filter(PLAYER %in% missing.actn)
+
+# query to retrieve player id since roto doesn't have one
+players.query <- 'SELECT joinName, actnetId actnetPlayerId, hooprId FROM players'
+playersdb <- dbGetQuery(conn, players.query)
+
+#roto doesn't have suffixes but everything else does. UGH!
+# creating name column without suffixes to join with betting data until ID list is compiled
+
+playersdb <- playersdb %>%
+    mutate(
+        joinName = tolower(stringr::str_replace_all(joinName, suffix.rep))
+    ) 
+
+# add actnetid to roto
+roto <- roto %>% 
+            left_join(playersdb, by = 'joinName') %>% 
+            select(-line_to, -oOdds_to, -uOdds_to)
+
+#add roto to betting table
+betting.table <- rbind(betting.table, roto)
+
+
 # close conns
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
@@ -187,8 +241,8 @@ missing.players.odds
 #right join with betting table on the right so that only players with lines/odds are kept
 harvest <- right_join(stat.harvest, 
                       betting.table, 
-                      by=c("join.names" = "PLAYER")) %>%
-                select(-team, -date.y, -join.names) %>%
+                      by=c("join.names" = "joinName")) %>%
+                select(-team, -date.y, -join.names, -PLAYER, -hooprId, -actnetPlayerId) %>%
                 rename(c(date = date.x))
 #####
 
@@ -197,28 +251,28 @@ harvest <- right_join(stat.harvest,
 ##################
 harvest <- harvest %>%
             mutate(
-                ptsOscore = round((ptsSynth - ptsStdL3) - line_PTS,3),
-                ptsUscore = round(line_PTS - (ptsSynth + ptsStdL3),3),
-                rebOscore = round((rebSynth - rebStdL3) - line_REB,3),
-                rebUscore = round(line_REB - (rebSynth + rebStdL3),3),
-                astOscore = round((astSynth - astStdL3) - line_AST,3),
-                astUscore = round(line_AST - (astSynth + astStdL3),3),
-                stlOscore = round((stlSynth - stlStdL3) - line_STL,3),
-                stlUscore = round(line_STL - (stlSynth + stlStdL3),3),
-                blkOscore = round((blkSynth - blkStdL3) - line_BLK,3),
-                blkUscore = round(line_BLK - (blkSynth + blkStdL3),3),
-                fg3mOscore = round((fg3mSynth - fg3mStdL3) - line_THREES,3),
-                fg3mUscore = round(line_THREES - (fg3mSynth + fg3mStdL3),3),
-                praOscore = round((praSynth - praStdL3) - line_PTSREBAST,3),
-                praUscore = round(line_PTSREBAST - (praSynth + praStdL3),3),
-                prOscore = round((prSynth - prStdL3) - line_PTSREB,3),
-                prUscore = round(line_PTSREB - (prSynth + prStdL3),3),
-                paOscore = round((paSynth - paStdL3) - line_PTSAST,3),
-                paUscore = round(line_PTSAST - (paSynth + paStdL3),3),
-                raOscore = round((raSynth - raStdL3) - line_REBAST,3),
-                raUscore = round(line_REBAST - (raSynth + raStdL3),3),
-                sbOscore = round((sbSynth - sbStdL3) - line_STLBLK,3),
-                sbUscore = round(line_STLBLK - (sbSynth + sbStdL3),3),
+                ptsOscore = round((ptsSynth - ptsStdL3) - line_pts,3),
+                ptsUscore = round(line_pts - (ptsSynth + ptsStdL3),3),
+                rebOscore = round((rebSynth - rebStdL3) - line_reb,3),
+                rebUscore = round(line_reb - (rebSynth + rebStdL3),3),
+                astOscore = round((astSynth - astStdL3) - line_ast,3),
+                astUscore = round(line_ast - (astSynth + astStdL3),3),
+                stlOscore = round((stlSynth - stlStdL3) - line_stl,3),
+                stlUscore = round(line_stl - (stlSynth + stlStdL3),3),
+                blkOscore = round((blkSynth - blkStdL3) - line_blk,3),
+                blkUscore = round(line_blk - (blkSynth + blkStdL3),3),
+                fg3mOscore = round((fg3mSynth - fg3mStdL3) - line_threes,3),
+                fg3mUscore = round(line_threes - (fg3mSynth + fg3mStdL3),3),
+                praOscore = round((praSynth - praStdL3) - line_pra,3),
+                praUscore = round(line_pra - (praSynth + praStdL3),3),
+                prOscore = round((prSynth - prStdL3) - line_pr,3),
+                prUscore = round(line_pr - (prSynth + prStdL3),3),
+                paOscore = round((paSynth - paStdL3) - line_pa,3),
+                paUscore = round(line_pa - (paSynth + paStdL3),3),
+                raOscore = round((raSynth - raStdL3) - line_ra,3),
+                raUscore = round(line_ra - (raSynth + raStdL3),3),
+                sbOscore = round((sbSynth - sbStdL3) - line_sb,3),
+                sbUscore = round(line_sb - (sbSynth + sbStdL3),3),
                 date = as.Date(date, format="%Y-%m-%d"),
                 game_id = as.numeric(game_id)
             )
@@ -258,7 +312,6 @@ game.lines.today <- games.betting.info(gids.today)
 harvest <- harvest %>% left_join(game.lines.today, by="game_id")
 
 #####
-
 
 ##################
 # add current day harvest to database

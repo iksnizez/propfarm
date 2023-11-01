@@ -6,7 +6,8 @@ library(dplyr)
 library(stringr)
 source("scripts/functions/dbhelpers.R")
 
-season <- "2022-23"
+season <- "2023-24"
+league <- 'nba'
 
 conn <- harvestDBconnect(league = league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
@@ -17,14 +18,15 @@ dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 #update pbp
 update_nba_db(dbname="nba", 
               tblname = "pbp", 
-              force_rebuild = c(2023), #TRUE, 
+              force_rebuild = c(2024:2024), #TRUE, 
               db_connection=conn)
 
 
 load_nba_player_box(
-    seasons = c(2002),
+    seasons = c(2024),
     dbConnection = conn,
-    tablename = 'playerbox'
+    tablename = 'playerbox',
+    
 )
 
 ######
@@ -32,7 +34,7 @@ load_nba_player_box(
 
 
 ################
-# loan players table in DB with initial data 
+# load players table in DB with initial data 
 # it will be the Hoopr players name, ID, Position + nbaId, rotoId, cleaned name for joins
 ################
 # list to remove suffixes and punct from names
