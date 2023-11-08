@@ -378,15 +378,29 @@ propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20, 
 ####################
 # SPLIT AND SUM BOX SCORES
 ####################
-split.sum.box.scores <- function(box.scores, gids, t= NULL, min = 0){
+split.sum.box.scores <- function(box.scores, gids, opp=TRUE, t= NULL, min = 0){
     # this updates the nba box score columns and filters them for specific games by gid
     # it's purpose is to be used to look at the opponents of a single team in the gids
     # specifically when calculating a team surrendered stats.
-    split.summed <- box.scores %>%
+  
+    # filter boxscores depening on opp input. 
+    # if True, then calculating stats allowed. If false, calc. stats accumulated
+    if(opp){
+      split.summed <- box.scores %>%
         filter(game_id %in% gids,
                team_abbreviation != t,
                minutes > 0,
-               did_not_play == FALSE) %>% 
+               did_not_play == FALSE) 
+    } 
+    else{
+      split.summed <- box.scores %>%
+        filter(game_id %in% gids,
+               team_abbreviation == t,
+               minutes > 0,
+               did_not_play == FALSE) 
+    }
+
+    split.summed <- split.summed %>% 
         rename(c(
           fgm = field_goals_made,
           fga = field_goals_attempted,
@@ -421,9 +435,10 @@ split.sum.box.scores <- function(box.scores, gids, t= NULL, min = 0){
                   toCount = sum(as.numeric(to)),
                   pfCount = sum(as.numeric(pf)),
                   ptsCount = sum(as.numeric(pts)),
-        )%>%
-        mutate(team= t)
-    
+        ) %>% 
+      mutate(team= t)
+      
+
     return(split.summed)
 }
 
@@ -432,7 +447,7 @@ split.sum.box.scores <- function(box.scores, gids, t= NULL, min = 0){
 ####################
 ## FUNCTION TO RETRIEVE TEAM OPPONENT RANKS FROM LAST N games
 ####################
-opp.stats.last.n.games  <- function(season, num.game.lookback=15, box.scores=NULL, schedule=NULL){
+stats.last.n.games.opp  <- function(season, num.game.lookback=15, box.scores=NULL, schedule=NULL){
     # ingest season year, number of games (15 default), data frame of player boxscores,
     # and data frame of the season schedule
     # output dataframe for teams stats allowed to opponents, dataframe for the stats grouped by
@@ -478,17 +493,17 @@ opp.stats.last.n.games  <- function(season, num.game.lookback=15, box.scores=NUL
 
         if(t == teams[1]){
             #retrieve gid boxscores and split att/made, aggregating stats by team, position
-            grouped <- split.sum.box.scores(box.scores, gids, t=t, min=0)
+            grouped <- split.sum.box.scores(box.scores, gids, opp=TRUE, t=t, min=0)
         }
         else{
             #retrieve gid boxscores and split att/made, aggregating stats by team, position
-            temp <- split.sum.box.scores(box.scores, gids, t=t, min=0)
+            temp <- split.sum.box.scores(box.scores, gids, opp=TRUE, t=t, min=0)
             grouped <- rbind(grouped, temp)
         }
     }
 
-    # groups the agg stats by team for totals over n games
-    stats.team.opp.total <- grouped %>%
+    # groups the agg stats by team for totals over n games *** GROUPS BY TEAM + POS
+    stats.team.opp.total.pos <- grouped %>%
         group_by(
             team, 
             athlete_position_abbreviation
@@ -511,11 +526,49 @@ opp.stats.last.n.games  <- function(season, num.game.lookback=15, box.scores=NUL
             ptsCount = sum(ptsCount)
         )
     
+    # groups the agg stats by team for totals over n games *** GROUPS BY TEAM ONLY
+    stats.team.opp.total <- grouped %>%
+      group_by(
+        team
+      ) %>%
+      summarize(
+        fgmCount = sum(fgmCount),
+        fgaCount = sum(fgaCount),
+        fg3mCount = sum(fg3mCount),
+        fg3aCount = sum(fg3aCount),
+        ftmCount = sum(ftmCount),
+        ftaCount = sum(ftaCount),
+        orebCount = sum(orebCount),
+        drebCount = sum(drebCount),
+        rebCount = sum(rebCount),
+        astCount = sum(astCount),
+        stlCount = sum(stlCount),
+        blkCount = sum(blkCount),
+        toCount = sum(toCount),
+        pfCount = sum(pfCount),
+        ptsCount = sum(ptsCount)
+      ) %>% 
+      mutate(fgmRank = rank(fgmCount),
+             fgaRank = rank(fgaCount),
+             fg3mRank = rank(fg3mCount),
+             fg3aRank = rank(fg3aCount),
+             ftmRank = rank(ftmCount),
+             ftaRank = rank(ftaCount),
+             orebRank = rank(orebCount),
+             drebRank = rank(drebCount),
+             rebRank = rank(rebCount),
+             astRank = rank(astCount),
+             stlRank = rank(stlCount),
+             blkRank = rank(blkCount),
+             toRank = rank(toCount),
+             ptsRank = rank(ptsCount)
+      )
+    
     # creates dataframes for each position to easily create ranks for each  position and stat
     positions <- c("PG", "SG", "SF", "PF", "C")
     for(pos in positions){
         var.name <- pos
-        assign(var.name, stats.team.opp.total %>% 
+        assign(var.name, stats.team.opp.total.pos %>% 
                    filter(athlete_position_abbreviation == pos) %>%
                    ungroup() %>% 
                    mutate(fgmRank = rank(fgmCount),
@@ -544,10 +597,170 @@ opp.stats.last.n.games  <- function(season, num.game.lookback=15, box.scores=NUL
     # game.opp.stats.by.pos is game level agg stats given up for each team
     # team.opp.stats.by.pos is team level agg stats given up for each team over n games for main 5 positions + RANKS for them
     # test is same as team.opp.stats.by.pos but includes generic G and F positions and NO ranks
-    output <- list(grouped, position.ranks, stats.team.opp.total)
-    names(output) <- c("game.opp.stats.by.pos", "team.opp.stats.by.pos", "team.opp.stats.by.all.pos")
+    output <- list(grouped, position.ranks, stats.team.opp.total, stats.team.opp.total)
+    names(output) <- c("game.opp.stats.by.pos", "team.opp.stats.by.pos", 
+                       "team.opp.stats.by.all.pos", "team.opp.stats")
     
     return(output)
+}
+
+#####
+
+####################
+## FUNCTION TO RETRIEVE TEAM OFFENSIVE RANKS FROM LAST N games
+####################
+stats.last.n.games.offense  <- function(season, num.game.lookback=15, box.scores=NULL, schedule=NULL){
+  # ingest season year, number of games (15 default), data frame of player boxscores,
+  # and data frame of the season schedule
+  # output dataframe for teams stats , dataframe for the stats grouped by
+  # team and position, and a data frame for each position grouped by team and ranked
+  
+  # checks if box scores dataframe is provided and pulls box scores data if not
+  if(is.null(box.scores)){
+    box.scores <- hoopR::load_nba_player_box(seasons = season)  %>%
+      mutate(team_abbreviation = case_when(
+        team_abbreviation == "GSW" ~ "GS",
+        TRUE ~ team_abbreviation
+      ))
+  }
+  
+  # checks if schedule dataframe is provided and pulls schedule data if not
+  if(is.null(schedule)){
+    schedule <- hoopR::load_nba_schedule(seasons = season)
+  }
+  
+  # schedule data for only games played
+  completed.games <- schedule %>% filter(status_type_completed == TRUE)
+  # gather team abbreviations
+  teams <- append(unique(completed.games$home_abbreviation), 
+                  unique(completed.games$away_abbreviation)) %>%
+    unique()
+  
+  # looping through team abbreviations to get n# of gids for every team
+  # originally, looped only to gather all teams gids but this caused some weird results
+  # with some teams above and below the desired look back. changed to do each team indiviually 
+  # so that the look back holds true for all teams. I ama not sure what caused the descrepancy
+  for(t in teams){
+    
+    #starting the first dataframe that all other teams will add into
+    gids <- (completed.games %>%
+               filter(home_abbreviation == t | away_abbreviation == t) %>%
+               arrange(desc(date)) %>%
+               slice(1:num.game.lookback) %>%
+               select(id))[["id"]]
+    
+    if(t == teams[1]){
+      #retrieve gid boxscores and split att/made, aggregating stats by team, position
+      grouped <- split.sum.box.scores(box.scores, gids, opp=FALSE, t=t, min=0)
+    }
+    else{
+      #retrieve gid boxscores and split att/made, aggregating stats by team, position
+      temp <- split.sum.box.scores(box.scores, gids,opp=FALSE, t=t, min=0)
+      grouped <- rbind(grouped, temp)
+    }
+  }
+
+  # groups the agg stats by team for totals over n games *** GROUPS BY TEAM + POSITION
+  stats.team.total.pos <- grouped %>%
+    group_by(
+      team, 
+      athlete_position_abbreviation
+    ) %>%
+    summarize(
+      fgmCount = sum(fgmCount),
+      fgaCount = sum(fgaCount),
+      fg3mCount = sum(fg3mCount),
+      fg3aCount = sum(fg3aCount),
+      ftmCount = sum(ftmCount),
+      ftaCount = sum(ftaCount),
+      orebCount = sum(orebCount),
+      drebCount = sum(drebCount),
+      rebCount = sum(rebCount),
+      astCount = sum(astCount),
+      stlCount = sum(stlCount),
+      blkCount = sum(blkCount),
+      toCount = sum(toCount),
+      pfCount = sum(pfCount),
+      ptsCount = sum(ptsCount)
+    )
+  
+  # groups the agg stats by team for totals over n games *** GROUPS BY TEAM ONLY
+  stats.team.total <- grouped %>%
+    group_by(
+      team
+    ) %>%
+    summarize(
+      fgmCount = sum(fgmCount),
+      fgaCount = sum(fgaCount),
+      fg3mCount = sum(fg3mCount),
+      fg3aCount = sum(fg3aCount),
+      ftmCount = sum(ftmCount),
+      ftaCount = sum(ftaCount),
+      orebCount = sum(orebCount),
+      drebCount = sum(drebCount),
+      rebCount = sum(rebCount),
+      astCount = sum(astCount),
+      stlCount = sum(stlCount),
+      blkCount = sum(blkCount),
+      toCount = sum(toCount),
+      pfCount = sum(pfCount),
+      ptsCount = sum(ptsCount)
+    ) %>% 
+    # rank labels the lowest value as 1, since this is offense stats I am making the stats negative then ranking.
+    # 1 will then be the best
+    mutate(fgmRank = rank(-1* fgmCount, ),
+           fgaRank = rank(-1* fgaCount),
+           fg3mRank = rank(-1* fg3mCount),
+           fg3aRank = rank(-1* fg3aCount),
+           ftmRank = rank(-1* ftmCount),
+           ftaRank = rank(-1* ftaCount),
+           orebRank = rank(-1* orebCount),
+           drebRank = rank(-1* drebCount),
+           rebRank = rank(-1* rebCount),
+           astRank = rank(-1* astCount),
+           stlRank = rank(-1* stlCount),
+           blkRank = rank(-1* blkCount),
+           toRank = rank(-1* toCount),
+           ptsRank = rank(-1* ptsCount)
+    )
+  
+  # creates dataframes for each position to easily create ranks for each  position and stat
+  positions <- c("PG", "SG", "SF", "PF", "C")
+  for(pos in positions){
+    var.name <- pos
+    assign(var.name, stats.team.total.pos %>% 
+             filter(athlete_position_abbreviation == pos) %>%
+             ungroup() %>% 
+             mutate(fgmRank = rank(fgmCount),
+                    fgaRank = rank(fgaCount),
+                    fg3mRank = rank(fg3mCount),
+                    fg3aRank = rank(fg3aCount),
+                    ftmRank = rank(ftmCount),
+                    ftaRank = rank(ftaCount),
+                    orebRank = rank(orebCount),
+                    drebRank = rank(drebCount),
+                    rebRank = rank(rebCount),
+                    astRank = rank(astCount),
+                    stlRank = rank(stlCount),
+                    blkRank = rank(blkCount),
+                    toRank = rank(toCount),
+                    ptsRank = rank(ptsCount)
+             )
+    )
+  }
+  # binding the position dfs with their ranks into a single df
+  position.ranks <- rbind(PG, SG)
+  position.ranks <- rbind(position.ranks, SF)
+  position.ranks <- rbind(position.ranks, PF)
+  position.ranks <- rbind(position.ranks, C)
+  
+  # game.opp.stats.by.pos is game level agg stats given up for each team
+  # team.opp.stats.by.pos is team level agg stats given up for each team over n games for main 5 positions + RANKS for them
+  # test is same as team.opp.stats.by.pos but includes generic G and F positions and NO ranks
+  output <- list(grouped, position.ranks, stats.team.total.pos, stats.team.total)
+  names(output) <- c("game.stats.by.pos", "team.stats.by.pos", "team.stats.by.all.pos", "team.stats")
+  
+  return(output)
 }
 
 #####

@@ -22,7 +22,7 @@ league <- 'nba'
 season  <-  "2023-24"
 s <-  2024
 n.games <- 3
-date_change <- -1 ##<<<<<<<<<<<<<<<<<<<<<<<< <<<<<<<<<<<<<<<< ######use negative for going back days
+date_change <- 0 ##<<<<<<<<<<<<<<<<<<<<<<<< <<<<<<<<<<<<<<<< ######use negative for going back days
 cutoff_date <- Sys.Date() - 12
 search.date <- Sys.Date() + date_change
 
@@ -121,8 +121,15 @@ gids.today <- unique(games.today$game_id)
 back.to.back.first.id <- intersect(team.id.today, team.id.tomorrow)
 back.to.back.first <- intersect(team.names.today, team.names.tomorrow)
 
-back.to.back.last.id <- intersect(team.id.today, team.id.yesterday)
-back.to.back.last <- intersect(team.names.today, team.names.yesterday)
+# if their were days off then today can't be the backend of a BTB
+if( (search.date - prev.game.date) > 1){
+    back.to.back.last.id <- c()
+    back.to.back.last <- c()
+# if there were games yesterday compared to search date then today can be the front end of the BTB
+} else {
+    back.to.back.last.id <- intersect(team.id.today, team.id.yesterday)
+    back.to.back.last <- intersect(team.names.today, team.names.yesterday)
+}
 
 #creating matchup lookup
 matchups.today <- games.today %>% select(home_team_abb, away_team_abb)
@@ -196,8 +203,8 @@ roto <- read.csv(paste0('data\\',search.date, '_odds.csv')) %>%
             prop == 'THREES' ~ 'threes',
             prop == 'TURNOVERS' ~ 'to'
         ),
-        joinName = tolower(PLAYER),
-        PLAYER = tolower(PLAYER)
+        PLAYER= tolower(stringr::str_replace_all(PLAYER, suffix.rep)),
+        joinName = tolower(PLAYER)
     ) %>% 
     pivot_wider(names_from = prop,
                 values_from = c(line, oOdds, uOdds))
@@ -226,9 +233,47 @@ roto <- roto %>%
             left_join(playersdb, by = 'joinName') %>% 
             select(-line_to, -oOdds_to, -uOdds_to)
 
+rm(playersdb)
+
+# Save missing prop types from actnet and remove from roto for the first bind with betting table
+# the first bind adds the players that actnet was missing but roto had. after this bind
+# a second bind will add the missing props from actnet with the roto data
+missing.props <- setdiff(colnames(roto), colnames(betting.table))
+roto <- roto %>% 
+            select(-all_of(missing.props))
+
+
 #add roto to betting table
 betting.table <- rbind(betting.table, roto)
+rm(roto)
 
+# adding in missing actnet props
+roto <- read.csv(paste0('data\\',search.date, '_odds.csv')) %>%
+    rename(prop = stat) %>% 
+    mutate(
+        prop = case_when(
+            prop == 'PTS' ~ 'pts',
+            prop == 'REB' ~ 'reb',
+            prop == 'AST' ~ 'ast',
+            prop == 'STL' ~ 'stl',
+            prop == 'BLK' ~ 'blk',
+            prop == 'PTSREBAST' ~ 'pra',
+            prop == 'PTSREB' ~ 'pr',
+            prop == 'PTSAST' ~ 'pa',
+            prop == 'REBAST' ~ 'ra',
+            prop == 'STLBLK' ~ 'sb',
+            prop == 'THREES' ~ 'threes',
+            prop == 'TURNOVERS' ~ 'to'
+        ),
+        PLAYER= tolower(stringr::str_replace_all(PLAYER, suffix.rep)),
+        joinName = tolower(PLAYER)
+    ) %>% 
+    pivot_wider(names_from = prop,
+                values_from = c(line, oOdds, uOdds)) %>%
+    select(joinName, missing.props)
+
+betting.table <-  left_join(x = betting.table, y = roto, by=c('joinName'))
+rm(roto)
 
 # close conns
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
@@ -281,9 +326,17 @@ harvest <- harvest %>%
 ##################
 # retrieving opponent ranks by position for last N games
 ##################
+# when teams have less than 15 games played, look back to the min played so rank inputs are equal - only important early season
+min.gp <- hoopR::nba_leaguestandings()$Standings %>%
+                    select(WINS, LOSSES) %>% 
+                    mutate(gp = as.numeric(WINS) + as.numeric(LOSSES)) %>%
+                    select(gp) %>% 
+                    min()
+lookback.days.opp.ranks <- min(min.gp,15)
+
 # calling function to return teams opponent stats
-opp.stats <- opp.stats.last.n.games(season=s,
-                       num.game.lookback =15, 
+opp.stats <- stats.last.n.games.opp(season=s,
+                       num.game.lookback =lookback.days.opp.ranks, 
                        box.scores=boxscore.player, 
                        schedule=schedule)
 
@@ -310,8 +363,8 @@ harvest <- harvest %>%
 ##################
 game.lines.today <- games.betting.info(gids.today)
 harvest <- harvest %>% left_join(game.lines.today, by="game_id")
-
 #####
+
 
 ##################
 # add current day harvest to database
