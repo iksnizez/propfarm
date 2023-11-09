@@ -422,6 +422,8 @@ split.sum.box.scores <- function(box.scores, gids, opp=TRUE, t= NULL, min = 0){
         group_by(game_id, team_abbreviation, athlete_position_abbreviation) %>%
         summarize(fgmCount = sum(as.numeric(fgm)),
                   fgaCount = sum(as.numeric(fga)),
+                  fg2mCount = sum(as.numeric(fgm)) - sum(as.numeric(fg3m)),
+                  fg2aCount = sum(as.numeric(fga))- sum(as.numeric(fg3a)),
                   fg3mCount = sum(as.numeric(fg3m)),
                   fg3aCount = sum(as.numeric(fg3a)),
                   ftmCount = sum(as.numeric(ftm)),
@@ -511,8 +513,13 @@ stats.last.n.games.opp  <- function(season, num.game.lookback=15, box.scores=NUL
         summarize(
             fgmCount = sum(fgmCount),
             fgaCount = sum(fgaCount),
+            fgPct = sum(fgmCount) / sum(fgaCount),
+            fg2mCount = sum(fg2mCount),
+            fg2aCount = sum(fg2aCount),
+            fg2Pct = (sum(fgmCount) - sum(fg3mCount)) / (sum(fgaCount) - sum(fg3aCount)),
             fg3mCount = sum(fg3mCount),
             fg3aCount = sum(fg3aCount),
+            fg3Pct = sum(fg3mCount) / sum(fg3aCount),
             ftmCount = sum(ftmCount),
             ftaCount = sum(ftaCount),
             orebCount = sum(orebCount),
@@ -534,8 +541,13 @@ stats.last.n.games.opp  <- function(season, num.game.lookback=15, box.scores=NUL
       summarize(
         fgmCount = sum(fgmCount),
         fgaCount = sum(fgaCount),
+        fgPct = sum(fgmCount) / sum(fgaCount), 
+        fg2mCount = sum(fgmCount) - sum(fg3mCount),
+        fg2aCount = sum(fgaCount) - sum(fg3aCount),
+        fg2Pct = (sum(fgmCount) - sum(fg3mCount)) / (sum(fgaCount) - sum(fg3aCount)),
         fg3mCount = sum(fg3mCount),
         fg3aCount = sum(fg3aCount),
+        fg3Pct = sum(fg3mCount) / sum(fg3aCount),
         ftmCount = sum(ftmCount),
         ftaCount = sum(ftaCount),
         orebCount = sum(orebCount),
@@ -550,8 +562,13 @@ stats.last.n.games.opp  <- function(season, num.game.lookback=15, box.scores=NUL
       ) %>% 
       mutate(fgmRank = rank(fgmCount),
              fgaRank = rank(fgaCount),
+             fgPctRank = rank(fgPct),
+             fg2mRank = rank(fg2mCount),
+             fg2aRank = rank(fg2aCount),
+             fg2PctRank = rank(fg2Pct),
              fg3mRank = rank(fg3mCount),
              fg3aRank = rank(fg3aCount),
+             fg3PctRank = rank(fg3Pct),
              ftmRank = rank(ftmCount),
              ftaRank = rank(ftaCount),
              orebRank = rank(orebCount),
@@ -569,23 +586,28 @@ stats.last.n.games.opp  <- function(season, num.game.lookback=15, box.scores=NUL
     for(pos in positions){
         var.name <- pos
         assign(var.name, stats.team.opp.total.pos %>% 
-                   filter(athlete_position_abbreviation == pos) %>%
-                   ungroup() %>% 
-                   mutate(fgmRank = rank(fgmCount),
-                          fgaRank = rank(fgaCount),
-                          fg3mRank = rank(fg3mCount),
-                          fg3aRank = rank(fg3aCount),
-                          ftmRank = rank(ftmCount),
-                          ftaRank = rank(ftaCount),
-                          orebRank = rank(orebCount),
-                          drebRank = rank(drebCount),
-                          rebRank = rank(rebCount),
-                          astRank = rank(astCount),
-                          stlRank = rank(stlCount),
-                          blkRank = rank(blkCount),
-                          toRank = rank(toCount),
-                          ptsRank = rank(ptsCount)
-                   )
+                 filter(athlete_position_abbreviation == pos) %>%
+                 ungroup() %>% 
+                 mutate(fgmRank = rank(fgmCount),
+                        fgaRank = rank(fgaCount),
+                        fgPctRank = rank(fgPct),
+                        fg2mRank = rank(fg2mCount),
+                        fg2aRank = rank(fg2aCount),
+                        fg2PctRank = rank(fg2Pct),
+                        fg3mRank = rank(fg3mCount),
+                        fg3aRank = rank(fg3aCount),
+                        fg3PctRank = rank(fg3Pct),
+                        ftmRank = rank(ftmCount),
+                        ftaRank = rank(ftaCount),
+                        orebRank = rank(orebCount),
+                        drebRank = rank(drebCount),
+                        rebRank = rank(rebCount),
+                        astRank = rank(astCount),
+                        stlRank = rank(stlCount),
+                        blkRank = rank(blkCount),
+                        toRank = rank(toCount),
+                        ptsRank = rank(ptsCount)
+                 )
         )
     }
     # binding the position dfs with their ranks into a single df
@@ -634,7 +656,7 @@ stats.last.n.games.offense  <- function(season, num.game.lookback=15, box.scores
   # gather team abbreviations
   teams <- append(unique(completed.games$home_abbreviation), 
                   unique(completed.games$away_abbreviation)) %>%
-    unique()
+            unique()
   
   # looping through team abbreviations to get n# of gids for every team
   # originally, looped only to gather all teams gids but this caused some weird results
@@ -669,8 +691,13 @@ stats.last.n.games.offense  <- function(season, num.game.lookback=15, box.scores
     summarize(
       fgmCount = sum(fgmCount),
       fgaCount = sum(fgaCount),
+      fgPct = sum(fgmCount) / sum(fgaCount),
+      fg2mCount = sum(fg2mCount),
+      fg2aCount = sum(fg2aCount),
+      fg2Pct = (sum(fgmCount) - sum(fg3mCount)) / (sum(fgaCount) - sum(fg3aCount)),
       fg3mCount = sum(fg3mCount),
       fg3aCount = sum(fg3aCount),
+      fg3Pct = sum(fg3mCount) / sum(fg3aCount),
       ftmCount = sum(ftmCount),
       ftaCount = sum(ftaCount),
       orebCount = sum(orebCount),
@@ -692,8 +719,13 @@ stats.last.n.games.offense  <- function(season, num.game.lookback=15, box.scores
     summarize(
       fgmCount = sum(fgmCount),
       fgaCount = sum(fgaCount),
+      fgPct = sum(fgmCount) / sum(fgaCount), 
+      fg2mCount = sum(fgmCount) - sum(fg3mCount),
+      fg2aCount = sum(fgaCount) - sum(fg3aCount),
+      fg2Pct = (sum(fgmCount) - sum(fg3mCount)) / (sum(fgaCount) - sum(fg3aCount)),
       fg3mCount = sum(fg3mCount),
       fg3aCount = sum(fg3aCount),
+      fg3Pct = sum(fg3mCount) / sum(fg3aCount),
       ftmCount = sum(ftmCount),
       ftaCount = sum(ftaCount),
       orebCount = sum(orebCount),
@@ -708,10 +740,15 @@ stats.last.n.games.offense  <- function(season, num.game.lookback=15, box.scores
     ) %>% 
     # rank labels the lowest value as 1, since this is offense stats I am making the stats negative then ranking.
     # 1 will then be the best
-    mutate(fgmRank = rank(-1* fgmCount, ),
+    mutate(fgmRank = rank(-1* fgmCount),
            fgaRank = rank(-1* fgaCount),
+           fgPctRank = rank(-1* fgPct),
+           fg2mRank = rank(-1* fg2mCount),
+           fg2aRank = rank(-1* fg2aCount),
+           fg2PctRank = rank(-1* fg2Pct),
            fg3mRank = rank(-1* fg3mCount),
            fg3aRank = rank(-1* fg3aCount),
+           fg3PctRank = rank(-1* fg3Pct),
            ftmRank = rank(-1* ftmCount),
            ftaRank = rank(-1* ftaCount),
            orebRank = rank(-1* orebCount),
@@ -731,20 +768,25 @@ stats.last.n.games.offense  <- function(season, num.game.lookback=15, box.scores
     assign(var.name, stats.team.total.pos %>% 
              filter(athlete_position_abbreviation == pos) %>%
              ungroup() %>% 
-             mutate(fgmRank = rank(fgmCount),
-                    fgaRank = rank(fgaCount),
-                    fg3mRank = rank(fg3mCount),
-                    fg3aRank = rank(fg3aCount),
-                    ftmRank = rank(ftmCount),
-                    ftaRank = rank(ftaCount),
-                    orebRank = rank(orebCount),
-                    drebRank = rank(drebCount),
-                    rebRank = rank(rebCount),
-                    astRank = rank(astCount),
-                    stlRank = rank(stlCount),
-                    blkRank = rank(blkCount),
-                    toRank = rank(toCount),
-                    ptsRank = rank(ptsCount)
+             mutate(fgmRank = rank(-1* fgmCount),
+                    fgaRank = rank(-1* fgaCount),
+                    fgPctRank = rank(-1* fgPct),
+                    fg2mRank = rank(-1* fg2mCount),
+                    fg2aRank = rank(-1* fg2aCount),
+                    fg2PctRank = rank(-1* fg2Pct),
+                    fg3mRank = rank(-1* fg3mCount),
+                    fg3aRank = rank(-1* fg3aCount),
+                    fg3PctRank = rank(-1* fg3Pct),
+                    ftmRank = rank(-1* ftmCount),
+                    ftaRank = rank(-1* ftaCount),
+                    orebRank = rank(-1* orebCount),
+                    drebRank = rank(-1* drebCount),
+                    rebRank = rank(-1* rebCount),
+                    astRank = rank(-1* astCount),
+                    stlRank = rank(-1* stlCount),
+                    blkRank = rank(-1* blkCount),
+                    toRank = rank(-1* toCount),
+                    ptsRank = rank(-1* ptsCount)
              )
     )
   }
