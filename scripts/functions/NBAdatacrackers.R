@@ -1176,6 +1176,110 @@ distance.traveled <- function(distanceMatrix){
 #     arrange(athlete_id, desc(game_date)) 
 ##################
 
+##################
+# scraper basketball reference to get players positional percent estimates
+##################
+players.played.position.estimate <- function(season){
+  ## season should be four digit numerical
+  ## db process loads into my custom db, it applies the hoopr player ids to the bref player names
+  today <- Sys.Date()
+  
+  # https://www.basketball-reference.com/teams/PHI/2024.html#pbp
+  basketball.reference.team.abbr <- c('GSW','DEN','POR','SAC','TOR','DAL','PHO','CHI',
+                                      'LAL','HOU','MIA','MEM','DET','MIL','NOP','MIN',
+                                      'CLE','OKC','LAC','BRK','SAS','NYK','WAS','CHO',
+                                      'UTA','IND','BOS','PHI','ATL','ORL'
+  )
+  
+  start.url <- "https://www.basketball-reference.com/teams/" 
+  end.url <- ".html"
+  
+  #empty data frame to agg all the teams in the loop
+  bref.cols <- c('player', 'age', 'gp', 'mp', 'PG', 'SG', 'SF', 'PF', 'C',
+                 'onCourtPlusMinusPer100', 'onOffPlusMinusPer100', 'badPass', 'lostBall', 
+                 'shootFoulCommitted', 'offFoulCommitted', 'shootFoulDrawn', 'offFoulDrawn', 
+                 'ptsGenFromAst', 'andOnes','shotsBlk', 'date', 'team')
+  
+  bref.pos.estimates <- data.frame(matrix(nrow=0, ncol = length(bref.cols)))
+  colnames(bref.pos.estimates) <- bref.cols
+  
+  # looping through each teams page on bbref to build dataframe for the date
+  for (i in basketball.reference.team.abbr){
+    # build team url
+    url <- paste(start.url, i, '/', season, end.url, sep = "")
+    
+    # retrieve table from the website html - the table is at the bottom of the page and dynamically accessed
+    # until it is accessed it is in the html as a comment and needs to be extracted.
+    team.pos.estimates <- url %>%
+      read_html %>%
+      html_nodes(xpath = '//comment()') %>%
+      html_text() %>%
+      paste(collapse='') %>%
+      read_html() %>% 
+      html_node("#pbp") %>% 
+      html_table(trim = TRUE)
+    
+    # correcting headers
+    colnames(team.pos.estimates) <- c('rk', 'player', 'age', 'gp', 'mp', 'PG', 'SG', 'SF',
+                                      'PF', 'C', 'onCourtPlusMinusPer100', 'onOffPlusMinusPer100',
+                                      'badPass', 'lostBall', 'shootFoulCommitted', 'offFoulCommitted',
+                                      'shootFoulDrawn', 'offFoulDrawn', 'ptsGenFromAst', 'andOnes', 'shotsBlk')
+    
+    # removing row that was used for headers and their rank and converting str pct to nums
+    team.pos.estimates <- team.pos.estimates[-1,-1] %>% 
+      mutate(date = today,
+             PG = as.numeric(gsub('%', '', PG)) / 100,
+             SG = as.numeric(gsub('%', '', SG))/ 100,
+             SF = as.numeric(gsub('%', '', SF))/ 100,
+             PF = as.numeric(gsub('%', '', PF))/ 100,
+             C = as.numeric(gsub('%', '', C))/ 100,
+             team = i
+      ) %>% 
+      mutate_at(c('PG', 'SG', 'SF', 'PF', 'C'), replace_na, 0)
+    # filter out traded players that aren't udpated in the site
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Nicolas Batum' & team == 'LAC'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'P.J. Tucker' & team == 'PHI'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Robert Covington' & team == 'LAC'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'KJ Martin' & team == 'LAC'))
+    team.pos.estimates <- team.pos.estimates  %>% unique()
+    
+    # combine temp team df to agg df
+    bref.pos.estimates <- rbind(bref.pos.estimates, team.pos.estimates)
+    Sys.sleep(1)
+  }
+  
+  # creating column to designate players position by using the one with the highest % of plays
+  bref.pos.estimates$pos <- colnames(bref.pos.estimates)[(5:9)[max.col(bref.pos.estimates[5:9], "first")]]
+  
+  #roto doesn't have suffixes but everything else does. UGH!
+  # creating name column without suffixes to join with betting data until ID list is compiled
+  suffix.rep <- c("\\."="", "`"="", "'"="",
+                  " III$"="", " IV$"="", " II$"="", " iii$"="", " ii$"="", " iv$"="",
+                  " jr$"="", " sr$"="", " jr.$"="", " sr.$"="", " Jr$"="", " Sr$"="", " Jr.$"="", " Sr.$"="",
+                  "š"="s","ş"="s", "š"="s", 'š'="s", "š"="s",
+                  "ž"="z",
+                  "þ"="p","ģ"="g",
+                  "à"="a","á"="a","â"="a","ã"="a","ä"="a","å"="a",'ā'="a",
+                  "ç"="c",'ć'="c", 'č'="c",
+                  "è"="e","é"="e","ê"="e","ë"="e",'é'="e",
+                  "ì"="i","í"="i","î"="i","ï"="i",
+                  "ð"="o","ò"="o","ó"="o","ô"="o","õ"="o","ö"="o",'ö'="o",
+                  "ù"="u","ú"="u","û"="u","ü"="u","ū"="u",
+                  "ñ"="n","ņ"="n",
+                  "ý"="y",
+                  "Dario .*"="dario saric", "Alperen .*"="alperen sengun", "Luka.*amanic"="luka samanic"
+  )
+  
+  # add actnetid to roto
+  bref.pos.estimates <- bref.pos.estimates %>% 
+    mutate(
+      joinName = trimws(tolower(stringr::str_replace_all(player, suffix.rep)))
+    ) 
+  
+  return(bref.pos.estimates)
+}
+
+#################
 
 ####################
 ## FUNCTION TO CALCULATE PROPFARM PLAYER STATS FROM WNBA BOX

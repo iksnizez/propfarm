@@ -26,6 +26,57 @@ date_change <- 0 ##<<<<<<<<<<<<<<<<<<<<<<<< <<<<<<<<<<<<<<<< ######use negative 
 cutoff_date <- Sys.Date() - 12
 search.date <- Sys.Date() + date_change
 
+suffix.rep <- c("\\."="", "`"="", "'"="",
+                " III$"="", " IV$"="", " II$"="", " iii$"="", " ii$"="", " iv$"="",
+                " jr$"="", " sr$"="", " jr.$"="", " sr.$"="", " Jr$"="", " Sr$"="", " Jr.$"="", " Sr.$"="",
+                "š"="s","ş"="s", "š"="s", 'š'="s", "š"="s",
+                "ž"="z",
+                "þ"="p","ģ"="g",
+                "à"="a","á"="a","â"="a","ã"="a","ä"="a","å"="a",'ā'="a",
+                "ç"="c",'ć'="c", 'č'="c",
+                "è"="e","é"="e","ê"="e","ë"="e",'é'="e",
+                "ì"="i","í"="i","î"="i","ï"="i",
+                "ð"="o","ò"="o","ó"="o","ô"="o","õ"="o","ö"="o",'ö'="o",
+                "ù"="u","ú"="u","û"="u","ü"="u","ū"="u",
+                "ñ"="n","ņ"="n",
+                "ý"="y",
+                "Dario .*"="dario saric", "Alperen .*"="alperen sengun", "Luka.*amanic"="luka samanic"
+)
+###########################
+
+#############
+# retrieve most recent basketball-reference player position estimate - using the players highest % as their POS assignment
+#############
+# use custom function to retrieve basketball-reference position estimates
+bref.pos.estimates <- players.played.position.estimate(season= s)
+
+# add to playerIds and append to db
+conn <- harvestDBconnect(league = league)
+dbSendQuery(conn, "SET GLOBAL local_infile = true;")
+
+# query to retrieve player id since roto doesn't have one
+players.query <- 'SELECT joinName, actnetId actnetPlayerId, hooprId FROM players'
+playersdb <- dbGetQuery(conn, players.query) %>%
+                mutate(
+                    joinName = trimws(tolower(stringr::str_replace_all(joinName, suffix.rep)))
+                ) 
+
+# add actnetid to roto
+bref.pos.estimates <- bref.pos.estimates %>% 
+    left_join(playersdb, by = 'joinName')
+
+rm(playersdb)
+
+dbWriteTable(conn, name = "brefmisc", value= bref.pos.estimates, 
+             row.names = FALSE, overwrite = FALSE, append = TRUE)
+
+dbSendQuery(conn, "SET GLOBAL local_infile = false;")
+dbDisconnect(conn)
+
+# load from db if already pulled on date
+
+########
+
 # boxscore  will be used to access players that are playing today and agg stats
 boxscore.player <- load_nba_player_box(s) %>% 
                         filter(game_date <= search.date )
@@ -50,8 +101,8 @@ dates.allstar <- season.game.dates %>%
 season.game.dates <- (season.game.dates %>%
                           select(game_date_est) %>%
                           mutate(game_date_est = as.Date(game_date_est)))$game_date_est %>% 
-    unique() %>% 
-    sort(decreasing = TRUE)
+                          unique() %>% 
+                          sort(decreasing = TRUE)
 
 next.game.index <- match(search.date, season.game.dates) - 1
 
@@ -69,11 +120,14 @@ games.today <- espn_nba_scoreboard (season = today.date.char)
 games.yesterday <- espn_nba_scoreboard (season = yesterday.date.char)
 games.tomorrow <- espn_nba_scoreboard (season = tomorrow.date.char)
 
-# filter out all star games once they are in the box score data
+# filter out all star games once they are in the box score data and update player position assignment
 boxscore.player <- boxscore.player %>%
     # FILTER OUT ASG
-    filter(!game_date %in%  dates.allstar) %>%
-    # change generic positions 
+    filter(!game_date %in%  dates.allstar)  %>%
+    left_join(bref.pos.estimates %>% select(hooprId, pos) %>% rename(athlete_id = hooprId), by = c('athlete_id')) %>% 
+    mutate(athlete_position_abbreviation = case_when(is.na(pos) ~ athlete_position_abbreviation,
+                                                     TRUE ~ pos)) %>%
+    # change remaining generic positions 
     mutate(
         athlete_position_abbreviation = case_when(
             athlete_position_abbreviation == "G" ~ "SG",
@@ -144,13 +198,11 @@ stat.harvest <- propfarming(boxscore.player,
 #addding date
 stat.harvest$date <- search.date
 # creating name column without suffixes to join with betting data until ID list is compiled
-suffix.rep <- c("\\."="", "'"="", "'"=""," jr"="", " sr"="", " III"="", " IV"="", " II"="",
-                " jr."="", " sr."="", " Jr"="", " Sr"="", " Jr."="", " Sr."="")
+
 # updating generic positions with 1 of 5
-##pos.rep <- c("^G"="SG", "^F"="PF")
 stat.harvest <- stat.harvest %>%
                     mutate(
-                        join.names = tolower(stringr::str_replace_all(athlete_display_name, suffix.rep))
+                        join.names = trimws(tolower(stringr::str_replace_all(athlete_display_name, suffix.rep)))
                     ) 
 #####
 
@@ -174,7 +226,7 @@ betting.table <- dbGetQuery(conn, paste0(query, odds.date, "'")) %>%
     pivot_wider(names_from = prop,
                 values_from = c(line, oOdds, uOdds))  %>%#, propId))  %>%
     mutate(
-        PLAYER= tolower(stringr::str_replace_all(PLAYER, suffix.rep)),
+        PLAYER= trimws(tolower(stringr::str_replace_all(PLAYER, suffix.rep))),
         team = case_when(
             team == "NOP" ~ "NO",
             team == "NYK" ~ "NY",
@@ -203,7 +255,7 @@ roto <- read.csv(paste0('data\\',search.date, '_odds.csv')) %>%
             prop == 'THREES' ~ 'threes',
             prop == 'TURNOVERS' ~ 'to'
         ),
-        PLAYER= tolower(stringr::str_replace_all(PLAYER, suffix.rep)),
+        PLAYER= trimws(tolower(stringr::str_replace_all(PLAYER, suffix.rep))),
         joinName = tolower(PLAYER)
     ) %>% 
     pivot_wider(names_from = prop,
@@ -225,13 +277,12 @@ playersdb <- dbGetQuery(conn, players.query)
 
 playersdb <- playersdb %>%
     mutate(
-        joinName = tolower(stringr::str_replace_all(joinName, suffix.rep))
+        joinName = trimws(tolower(stringr::str_replace_all(joinName, suffix.rep)))
     ) 
 
 # add actnetid to roto
 roto <- roto %>% 
-            left_join(playersdb, by = 'joinName') %>% 
-            select(-line_to, -oOdds_to, -uOdds_to)
+            left_join(playersdb, by = 'joinName') #%>% select(-line_to, -oOdds_to, -uOdds_to)
 
 rm(playersdb)
 
@@ -242,6 +293,8 @@ missing.props <- setdiff(colnames(roto), colnames(betting.table))
 roto <- roto %>% 
             select(-all_of(missing.props))
 
+# adding any odds that actnet had that roto didn't so the dfs can be rbind
+roto[,setdiff(colnames(betting.table), colnames(roto))] <- NA
 
 #add roto to betting table
 betting.table <- rbind(betting.table, roto)
@@ -265,7 +318,7 @@ roto <- read.csv(paste0('data\\',search.date, '_odds.csv')) %>%
             prop == 'THREES' ~ 'threes',
             prop == 'TURNOVERS' ~ 'to'
         ),
-        PLAYER= tolower(stringr::str_replace_all(PLAYER, suffix.rep)),
+        PLAYER= trimws(tolower(stringr::str_replace_all(PLAYER, suffix.rep))),
         joinName = tolower(PLAYER)
     ) %>% 
     pivot_wider(names_from = prop,

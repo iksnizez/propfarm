@@ -53,7 +53,12 @@ boxscore.player <- load_nba_player_box(s) %>%
                         filter(game_date <= search.date ) %>%
                         # FILTER OUT ASG
                         filter(!game_date %in%  dates.allstar) %>%
-                        # change generic positions 
+                        left_join(bref.pos.estimates %>% select(hooprId, pos) %>% rename(athlete_id = hooprId), by = c('athlete_id')
+                        ) %>% 
+                        mutate(athlete_position_abbreviation = case_when(is.na(pos) ~ athlete_position_abbreviation,
+                                                                         TRUE ~ pos)
+                        ) %>%
+                        # change remaining generic positions 
                         mutate(
                             athlete_position_abbreviation = case_when(
                                 athlete_position_abbreviation == "G" ~ "SG",
@@ -194,4 +199,7 @@ View(homeDefAdvantage)
 View(awayDefAdvantage)
 View(homeOffAwayDef)
 View(homeDefAwayOff)
-
+pos.ranks <- defense$team.opp.stats.by.pos %>% select(team, athlete_position_abbreviation, contains("RANK"))
+View(pos.ranks)
+team.ranks <- defense$team.opp.stats.by.all.pos %>% select(team, contains("RANK"))
+View(team.ranks)
