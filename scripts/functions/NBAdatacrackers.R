@@ -378,7 +378,7 @@ propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20, 
 ####################
 # SPLIT AND SUM BOX SCORES
 ####################
-split.sum.box.scores <- function(box.scores, gids, opp=TRUE, t= NULL, min = 0){
+split.sum.box.scores <- function(box.scores, gids, opp=TRUE, t= NULL, min = 0, type = TRUE){
     # this updates the nba box score columns and filters them for specific games by gid
     # it's purpose is to be used to look at the opponents of a single team in the gids
     # specifically when calculating a team surrendered stats.
@@ -418,8 +418,19 @@ split.sum.box.scores <- function(box.scores, gids, opp=TRUE, t= NULL, min = 0){
           pf = fouls,
           oreb = offensive_rebounds,
           dreb = defensive_rebounds
-        )) %>%
-        group_by(game_id, team_abbreviation, athlete_position_abbreviation) %>%
+        ))
+    
+    # type = TRUE filtering, grouping for propfarm, if false = filtering for research prints
+    if (type){
+      split.summed <- split.summed %>% 
+        group_by(game_id, team_abbreviation, athlete_position_abbreviation)
+    } else{
+      split.summed <- split.summed %>% 
+        group_by(game_id, game_date, team_abbreviation, athlete_position_abbreviation) 
+    }
+        
+    
+    split.summed <- split.summed  %>%
         summarize(fgmCount = sum(as.numeric(fgm)),
                   fgaCount = sum(as.numeric(fga)),
                   fg2mCount = sum(as.numeric(fgm)) - sum(as.numeric(fg3m)),
@@ -449,7 +460,7 @@ split.sum.box.scores <- function(box.scores, gids, opp=TRUE, t= NULL, min = 0){
 ####################
 ## FUNCTION TO RETRIEVE TEAM OPPONENT RANKS FROM LAST N games
 ####################
-stats.last.n.games.opp  <- function(season, num.game.lookback=15, box.scores=NULL, schedule=NULL){
+stats.last.n.games.opp  <- function(season, num.game.lookback=15, type = TRUE, box.scores=NULL, schedule=NULL){
     # ingest season year, number of games (15 default), data frame of player boxscores,
     # and data frame of the season schedule
     # output dataframe for teams stats allowed to opponents, dataframe for the stats grouped by
@@ -495,21 +506,35 @@ stats.last.n.games.opp  <- function(season, num.game.lookback=15, box.scores=NUL
 
         if(t == teams[1]){
             #retrieve gid boxscores and split att/made, aggregating stats by team, position
-            grouped <- split.sum.box.scores(box.scores, gids, opp=TRUE, t=t, min=0)
+            grouped <- split.sum.box.scores(box.scores, gids, opp=TRUE, t=t, min=0, type=type)
         }
         else{
             #retrieve gid boxscores and split att/made, aggregating stats by team, position
-            temp <- split.sum.box.scores(box.scores, gids, opp=TRUE, t=t, min=0)
+            temp <- split.sum.box.scores(box.scores, gids, opp=TRUE, t=t, min=0, type=type)
             grouped <- rbind(grouped, temp)
         }
     }
 
-    # groups the agg stats by team for totals over n games *** GROUPS BY TEAM + POS
-    stats.team.opp.total.pos <- grouped %>%
+    ### groups the agg stats by team for totals over n games *** GROUPS BY TEAM + POS
+    
+    # type = TRUE filtering, grouping for propfarm, if false = filtering for research prints
+    if (type){
+      stats.team.opp.total.pos <- grouped %>%
         group_by(
-            team, 
-            athlete_position_abbreviation
-        ) %>%
+          team, 
+          athlete_position_abbreviation
+        )
+    }
+    else{
+      stats.team.opp.total.pos <- grouped %>%
+        group_by(
+          team, 
+          athlete_position_abbreviation,
+          game_date
+        )
+    }
+    
+    stats.team.opp.total.pos <- stats.team.opp.total.pos %>%
         summarize(
             fgmCount = sum(fgmCount),
             fgaCount = sum(fgaCount),
@@ -534,10 +559,23 @@ stats.last.n.games.opp  <- function(season, num.game.lookback=15, box.scores=NUL
         )
     
     # groups the agg stats by team for totals over n games *** GROUPS BY TEAM ONLY
-    stats.team.opp.total <- grouped %>%
-      group_by(
-        team
-      ) %>%
+    
+    # type = TRUE filtering, grouping for propfarm, if false = filtering for research prints
+    if (type){
+      stats.team.opp.total <- grouped %>%
+        group_by(
+          team
+        )
+    }
+    else{
+      stats.team.opp.total <- grouped %>%
+        group_by(
+          team, 
+          game_date
+        )
+    }
+    
+    stats.team.opp.total <- stats.team.opp.total %>%
       summarize(
         fgmCount = sum(fgmCount),
         fgaCount = sum(fgaCount),
@@ -631,7 +669,7 @@ stats.last.n.games.opp  <- function(season, num.game.lookback=15, box.scores=NUL
 ####################
 ## FUNCTION TO RETRIEVE TEAM OFFENSIVE RANKS FROM LAST N games
 ####################
-stats.last.n.games.offense  <- function(season, num.game.lookback=15, box.scores=NULL, schedule=NULL){
+stats.last.n.games.offense  <- function(season, num.game.lookback=15, type = TRUE, box.scores=NULL, schedule=NULL){
   # ingest season year, number of games (15 default), data frame of player boxscores,
   # and data frame of the season schedule
   # output dataframe for teams stats , dataframe for the stats grouped by
@@ -673,21 +711,34 @@ stats.last.n.games.offense  <- function(season, num.game.lookback=15, box.scores
     
     if(t == teams[1]){
       #retrieve gid boxscores and split att/made, aggregating stats by team, position
-      grouped <- split.sum.box.scores(box.scores, gids, opp=FALSE, t=t, min=0)
+      grouped <- split.sum.box.scores(box.scores, gids, opp=FALSE, t=t, min=0, type=type)
     }
     else{
       #retrieve gid boxscores and split att/made, aggregating stats by team, position
-      temp <- split.sum.box.scores(box.scores, gids,opp=FALSE, t=t, min=0)
+      temp <- split.sum.box.scores(box.scores, gids,opp=FALSE, t=t, min=0, type=type)
       grouped <- rbind(grouped, temp)
     }
   }
 
-  # groups the agg stats by team for totals over n games *** GROUPS BY TEAM + POSITION
-  stats.team.total.pos <- grouped %>%
-    group_by(
-      team, 
-      athlete_position_abbreviation
-    ) %>%
+  ### groups the agg stats by team for totals over n games *** GROUPS BY TEAM + POSITION
+  
+  # type = TRUE filtering, grouping for propfarm, if false = filtering for research prints
+  if (type){
+    stats.team.total.pos <- grouped %>%
+      group_by(
+        team, 
+        athlete_position_abbreviation
+      )
+  }
+  else{
+    stats.team.total.pos <- grouped %>%
+      group_by(
+        team, 
+        athlete_position_abbreviation,
+        game_date
+      )
+  }
+  stats.team.total.pos <- stats.team.total.pos %>%
     summarize(
       fgmCount = sum(fgmCount),
       fgaCount = sum(fgaCount),
@@ -711,11 +762,24 @@ stats.last.n.games.offense  <- function(season, num.game.lookback=15, box.scores
       ptsCount = sum(ptsCount)
     )
   
-  # groups the agg stats by team for totals over n games *** GROUPS BY TEAM ONLY
-  stats.team.total <- grouped %>%
-    group_by(
-      team
-    ) %>%
+  ### groups the agg stats by team for totals over n games *** GROUPS BY TEAM ONLY
+  
+  # type = TRUE filtering, grouping for propfarm, if false = filtering for research prints
+  if (type){
+    stats.team.total <- grouped %>%
+      group_by(
+        team
+      )
+  }
+  else{
+    stats.team.total <- grouped %>%
+      group_by(
+        team,
+        game_date
+      )
+  }
+  
+  stats.team.total <- stats.team.total %>%
     summarize(
       fgmCount = sum(fgmCount),
       fgaCount = sum(fgaCount),
@@ -865,8 +929,8 @@ player.box.score.avgs <- function(box_scores, game_ids, stats_player_name){
 ###############
 # retrieving a player's missed games and calculating player avg for those games
 ###############
-player.missed.games.stats <- function(team_abb, missed_player_names, stats_player_name, 
-                                      box_scores=NULL, schedule=NULL, season){
+player.missed.games.stats <- function(team_abb, missed_player_names, stats_player_name, season,
+                                      box_scores=NULL, schedule=NULL){
     ## ingest team, names of players who you want to see missed games for,
     ## the name of a single player you want to see how they performed with the other
     ## players missing and season
@@ -1057,7 +1121,7 @@ player.avg.vs.opp <- function(players, opp,
   print(opp.game.ids)
   # splitting shooting stats in box scores
   box.scores <-   box_scores %>% 
-                    dplyr::filter(min >0) %>% 
+                    filter(minutes >0) %>% 
                     rename(c(
                       fgm = field_goals_made,
                       fga = field_goals_attempted,
@@ -1241,6 +1305,8 @@ players.played.position.estimate <- function(season){
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'P.J. Tucker' & team == 'PHI'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Robert Covington' & team == 'LAC'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'KJ Martin' & team == 'LAC'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Filip Petrušev' & team == 'PHI'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Daniel Theis' & team == 'IND'))
     team.pos.estimates <- team.pos.estimates  %>% unique()
     
     # combine temp team df to agg df

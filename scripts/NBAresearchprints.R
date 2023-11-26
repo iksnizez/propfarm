@@ -18,7 +18,8 @@ source("scripts/functions/dbhelpers.R")
 league <- 'nba'
 season  <-  "2023-24"
 s <-  2024
-search.date <- Sys.Date()
+lookback <- 0 ######################################################## negative numbers are for historical games
+search.date <- Sys.Date() - lookback
 today.date.char <- format(search.date, "%Y%m%d")
 
 # getting the teams playing on the search date
@@ -85,7 +86,7 @@ schedule <- load_nba_schedule(season = s)
 ##### OFFENSE STATS/RANKS ######
 # using data cracker to calc off boxscores offensive ranks.
 # 1 = best, 30 = worst
-offense <- stats.last.n.games.offense(s, num.game.lookback=lookback.days, box.scores=boxscore.player, schedule=schedule)
+offense <- stats.last.n.games.offense(s, num.game.lookback=lookback.days, box.scores=boxscore.player, schedule=schedule, type=FALSE)
 team.ranks.offense <- offense$team.stats %>% 
                             select(team, contains("RANK"), -fgmRank, -fg2mRank) %>% 
                             pivot_longer(
@@ -101,7 +102,7 @@ team.ranks.offense <- offense$team.stats %>%
 
 ##### DEFENSE STATS/RANKS ######
 # 1 = best, 30 = worst
-defense <- stats.last.n.games.opp(s, num.game.lookback=lookback.days, box.scores=boxscore.player, schedule=schedule)
+defense <- stats.last.n.games.opp(s, num.game.lookback=lookback.days, box.scores=boxscore.player, schedule=schedule, type=FALSE)
 # pivot the team total stats longer
 team.ranks.defense <- defense$team.opp.stats %>% 
                             select(team, contains("RANK"), -fgmRank, -fg2mRank) %>% 
@@ -199,7 +200,12 @@ View(homeDefAdvantage)
 View(awayDefAdvantage)
 View(homeOffAwayDef)
 View(homeDefAwayOff)
-pos.ranks <- defense$team.opp.stats.by.pos %>% select(team, athlete_position_abbreviation, contains("RANK"))
+pos.ranks <- defense$team.opp.stats.by.pos %>% select(team, athlete_position_abbreviation, 
+                                                      ptsRank, rebRank, astRank, fg3mRank,fg3aRank, fg3PctRank,stlRank, blkRank, 
+                                                      orebRank, drebRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, ftmRank, ftaRank,  
+                                                       toRank)
 View(pos.ranks)
-team.ranks <- defense$team.opp.stats.by.all.pos %>% select(team, contains("RANK"))
+team.ranks <- defense$team.opp.stats.by.all.pos %>% select(team, ptsRank, rebRank, astRank, fg3mRank,fg3aRank, fg3PctRank,stlRank, blkRank, 
+                                                           orebRank, drebRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, ftmRank, ftaRank,  
+                                                           toRank)
 View(team.ranks)

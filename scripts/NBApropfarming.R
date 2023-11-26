@@ -54,6 +54,8 @@ bref.pos.estimates <- players.played.position.estimate(season= s)
 conn <- harvestDBconnect(league = league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
+bref.pos.estimates
+
 # query to retrieve player id since roto doesn't have one
 players.query <- 'SELECT joinName, actnetId actnetPlayerId, hooprId FROM players'
 playersdb <- dbGetQuery(conn, players.query) %>%
@@ -73,13 +75,20 @@ dbWriteTable(conn, name = "brefmisc", value= bref.pos.estimates,
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 
-# load from db if already pulled on date
+## load from db if already pulled on date
+conn <- harvestDBconnect(league = league)
+dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
+query.pos.ests <- paste("SELECT * FROM brefmisc WHERE date = '", search.date, "';", sep="")
+bref.pos.estimates <-  dbGetQuery(conn, query.pos.ests)
+
+dbSendQuery(conn, "SET GLOBAL local_infile = false;")
+dbDisconnect(conn)
 ########
 
 # boxscore  will be used to access players that are playing today and agg stats
 boxscore.player <- load_nba_player_box(s) %>% 
-                        filter(game_date <= search.date )
+                        filter(game_date <= search.date)
 
 # calculating previous game date
 prev.game.dates <- sort(boxscore.player$game_date %>% unique(), decreasing = TRUE)
@@ -192,7 +201,8 @@ matchups.today.full <- games.today %>% select(home_team_abb, away_team_abb, game
 # pulling player stats
 stat.harvest <- propfarming(boxscore.player, 
                             team.id.today, 
-                            matchups.today.full, 20,
+                            matchups.today.full, 
+                            0,   ####################<<<<<<<<<<<<<<<<<<<<<<<<<<##################### PUT BACK TO 15 after 20 games 
                             player.info) %>% 
                     ungroup()
 #addding date
@@ -337,11 +347,16 @@ missing.players.odds <- setdiff(stat.harvest$join.names, betting.table$PLAYER)
 missing.players.odds
 
 #right join with betting table on the right so that only players with lines/odds are kept
+
 harvest <- right_join(stat.harvest, 
                       betting.table, 
-                      by=c("join.names" = "joinName")) %>%
-                select(-team, -date.y, -join.names, -PLAYER, -hooprId, -actnetPlayerId) %>%
+                      #### SINCE HOOPRID IS ADDED ABOVE NOW, THE JOIN HAS BEEN UPDATED TO USE IT 
+                      #by=c("join.names" = "joinName")) %>%
+                      by = c("athlete_id"="hooprId")) %>% 
+                #select(-team, -date.y, -join.names, -hooprId, -PLAYER, -actnetPlayerId) %>%
+                select(-team, -date.y, -join.names, -joinName, -PLAYER, -actnetPlayerId) %>%
                 rename(c(date = date.x))
+
 #####
 
 ##################
@@ -391,7 +406,8 @@ lookback.days.opp.ranks <- min(min.gp,15)
 opp.stats <- stats.last.n.games.opp(season=s,
                        num.game.lookback =lookback.days.opp.ranks, 
                        box.scores=boxscore.player, 
-                       schedule=schedule)
+                       schedule=schedule,
+                       type=TRUE)
 
 # dropping the count columns and keeping the ranks
 opp.position.ranks <- opp.stats$team.opp.stats.by.pos %>%
@@ -414,8 +430,8 @@ harvest <- harvest %>%
 ##################
 # adding game over/under and spread to the harvest
 ##################
-game.lines.today <- games.betting.info(gids.today)
-harvest <- harvest %>% left_join(game.lines.today, by="game_id")
+#game.lines.today <- games.betting.info(gids.today)
+#harvest <- harvest %>% left_join(game.lines.today, by="game_id")
 #####
 
 
