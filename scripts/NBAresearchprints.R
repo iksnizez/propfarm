@@ -89,7 +89,7 @@ schedule <- load_nba_schedule(season = s)
 offense <- stats.last.n.games.offense(s, num.game.lookback=lookback.days, box.scores=boxscore.player, schedule=schedule, type=FALSE)
 team.ranks.offense <- offense$team.stats %>% 
                             select(team, contains("RANK"), -fgmRank, -fg2mRank) %>% 
-                            pivot_longer(
+                        pivot_longer(
                                 cols = c(ptsRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, fg3mRank, fg3aRank, fg3PctRank, ftmRank, ftaRank, orebRank, drebRank, 
                                          rebRank, astRank, stlRank, blkRank, toRank), 
                                 names_to = "stat", 
@@ -102,7 +102,7 @@ team.ranks.offense <- offense$team.stats %>%
 
 ##### DEFENSE STATS/RANKS ######
 # 1 = best, 30 = worst
-defense <- stats.last.n.games.opp(s, num.game.lookback=lookback.days, box.scores=boxscore.player, schedule=schedule, type=FALSE)
+defense <- stats.last.n.games.opp(s, num.game.lookback=lookback.days, box.scores=boxscore.player, schedule=schedule, type=TRUE)
 # pivot the team total stats longer
 team.ranks.defense <- defense$team.opp.stats %>% 
                             select(team, contains("RANK"), -fgmRank, -fg2mRank) %>% 

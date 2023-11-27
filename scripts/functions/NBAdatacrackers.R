@@ -288,7 +288,12 @@ propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20, 
   ###adding the player name back to the data
   # grabbing current roster info
   if(is.null(player_info)){
-    player.info <- hoopR::nba_commonallplayers(season="2022-23", is_only_current_season = 1)$CommonAllPlayers %>%
+    curr.season.end.year <- most_recent_nba_season()
+    curr.season.start.year <- curr.season.end.year - 1
+    curr.season.end.year <- curr.season.end.year - 2000
+    season.input <- paste(curr.season.start.year, "-", curr.season.end.year, sep = "")
+    
+    player.info <- hoopR::nba_commonallplayers(season=season.input, is_only_current_season = 1)$CommonAllPlayers %>%
       mutate(TEAM_ABBREVIATION = case_when(
         TEAM_ABBREVIATION == "NOP" ~ "NO",
         TEAM_ABBREVIATION == "NYK" ~ "NY",
@@ -316,8 +321,12 @@ propfarming <- function(box.score.data, team.ids, matchups.today, minFilter=20, 
   }
   
   #creating lookup for current team
-  pi <- player.info$team_abbreviation
-  names(pi) <- player.info$athlete_display_name
+  # pi <- player.info$team_abbreviation
+  # names(pi) <- player.info$athlete_display_name
+  player.names <- players.today %>% distinct(athlete_id, athlete_display_name, team_abbreviation)
+  
+  pi <- player.names$team_abbreviation
+  names(pi) <- player.names$athlete_display_name
   
   # adding back extra athlete details
   df <- merge(players.today %>% 
@@ -382,6 +391,7 @@ split.sum.box.scores <- function(box.scores, gids, opp=TRUE, t= NULL, min = 0, t
     # this updates the nba box score columns and filters them for specific games by gid
     # it's purpose is to be used to look at the opponents of a single team in the gids
     # specifically when calculating a team surrendered stats.
+    # TYPE is to include game_date or not
   
     # filter boxscores depening on opp input. 
     # if True, then calculating stats allowed. If false, calc. stats accumulated
@@ -518,21 +528,11 @@ stats.last.n.games.opp  <- function(season, num.game.lookback=15, type = TRUE, b
     ### groups the agg stats by team for totals over n games *** GROUPS BY TEAM + POS
     
     # type = TRUE filtering, grouping for propfarm, if false = filtering for research prints
-    if (type){
-      stats.team.opp.total.pos <- grouped %>%
+    stats.team.opp.total.pos <- grouped %>%
         group_by(
           team, 
           athlete_position_abbreviation
         )
-    }
-    else{
-      stats.team.opp.total.pos <- grouped %>%
-        group_by(
-          team, 
-          athlete_position_abbreviation,
-          game_date
-        )
-    }
     
     stats.team.opp.total.pos <- stats.team.opp.total.pos %>%
         summarize(
@@ -561,19 +561,11 @@ stats.last.n.games.opp  <- function(season, num.game.lookback=15, type = TRUE, b
     # groups the agg stats by team for totals over n games *** GROUPS BY TEAM ONLY
     
     # type = TRUE filtering, grouping for propfarm, if false = filtering for research prints
-    if (type){
-      stats.team.opp.total <- grouped %>%
+    stats.team.opp.total <- grouped %>%
         group_by(
           team
         )
-    }
-    else{
-      stats.team.opp.total <- grouped %>%
-        group_by(
-          team, 
-          game_date
-        )
-    }
+
     
     stats.team.opp.total <- stats.team.opp.total %>%
       summarize(
@@ -723,21 +715,12 @@ stats.last.n.games.offense  <- function(season, num.game.lookback=15, type = TRU
   ### groups the agg stats by team for totals over n games *** GROUPS BY TEAM + POSITION
   
   # type = TRUE filtering, grouping for propfarm, if false = filtering for research prints
-  if (type){
-    stats.team.total.pos <- grouped %>%
+  stats.team.total.pos <- grouped %>%
       group_by(
         team, 
         athlete_position_abbreviation
       )
-  }
-  else{
-    stats.team.total.pos <- grouped %>%
-      group_by(
-        team, 
-        athlete_position_abbreviation,
-        game_date
-      )
-  }
+
   stats.team.total.pos <- stats.team.total.pos %>%
     summarize(
       fgmCount = sum(fgmCount),
@@ -765,19 +748,10 @@ stats.last.n.games.offense  <- function(season, num.game.lookback=15, type = TRU
   ### groups the agg stats by team for totals over n games *** GROUPS BY TEAM ONLY
   
   # type = TRUE filtering, grouping for propfarm, if false = filtering for research prints
-  if (type){
-    stats.team.total <- grouped %>%
+  stats.team.total <- grouped %>%
       group_by(
         team
       )
-  }
-  else{
-    stats.team.total <- grouped %>%
-      group_by(
-        team,
-        game_date
-      )
-  }
   
   stats.team.total <- stats.team.total %>%
     summarize(

@@ -75,7 +75,7 @@ dbWriteTable(conn, name = "brefmisc", value= bref.pos.estimates,
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 
-## load from db if already pulled on date
+## load from db if already pulled on date ##############################
 conn <- harvestDBconnect(league = league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
@@ -89,6 +89,21 @@ dbDisconnect(conn)
 # boxscore  will be used to access players that are playing today and agg stats
 boxscore.player <- load_nba_player_box(s) %>% 
                         filter(game_date <= search.date)
+
+###########################################################################################
+# connect to db
+conn <- harvestDBconnect(league = league)
+dbSendQuery(conn, "SET GLOBAL local_infile = true;")
+
+harvest <- harvest.processing(conn, boxscores, season, s, search.date, dbAppend = FALSE)
+
+
+conn <- harvestDBconnect(league=league)
+dbSendQuery(conn, "SET GLOBAL local_infile = true;")
+
+add.actuals.props(conn, boxscore.player, games.yesterday$game_id)
+
+###########################################################################################
 
 # calculating previous game date
 prev.game.dates <- sort(boxscore.player$game_date %>% unique(), decreasing = TRUE)
@@ -448,7 +463,6 @@ dbDisconnect(conn)
 ##################
 # retrieving stat line from the last game and updating db
 ##################
-
 # filtering to only the most recent games for the actual stats to add to
 # the most recent harvest and determine if over or under won
 # The boxscores game_date is actual date + 1, to pull yesterday = use today date
@@ -459,9 +473,9 @@ boxscore.most.recent <- boxscore.player %>%
 
 
 # processing the box scores
-boxscore.most.recent <- boxscore.most.recent %>% 
-    select(game_id, athlete_id, minutes, points, rebounds, assists, steals, 
-           blocks, three_point_field_goals_made, turnovers) %>% 
+boxscore.most.recent <- boxscore.most.recent %>%
+    select(game_id, athlete_id, minutes, points, rebounds, assists, steals,
+           blocks, three_point_field_goals_made, turnovers) %>%
     rename(c(act_min = minutes,
              act_pts = points,
              act_reb = rebounds,
@@ -473,7 +487,7 @@ boxscore.most.recent <- boxscore.most.recent %>%
     )
     ) %>%
     mutate(athlete_id = as.numeric(athlete_id),
-           act_min = as.integer(act_min),       
+           act_min = as.integer(act_min),
            act_pts = as.integer(act_pts),
            act_reb = as.integer(act_reb),
            act_ast = as.integer(act_ast),
@@ -497,9 +511,9 @@ yest.prop.query <- paste0("SELECT * FROM props WHERE date = '", prev.game.date, 
 yesterday.harvest <- dbGetQuery(conn, yest.prop.query)
 
 # filtering the box scores for the players of interest and selecting the stats
-updates <- boxscore.most.recent %>% 
-                select(athlete_id, act_min, act_pts, act_reb, act_ast, 
-                       act_stl, act_blk, act_threes, act_to, act_pra, 
+updates <- boxscore.most.recent %>%
+                select(athlete_id, act_min, act_pts, act_reb, act_ast,
+                       act_stl, act_blk, act_threes, act_to, act_pra,
                        act_pr, act_pa, act_ra, act_sb) %>%
                 filter(athlete_id %in% yesterday.harvest$athlete_id)
 
@@ -507,12 +521,12 @@ updates <- boxscore.most.recent %>%
 missing.boxscores <- setdiff(boxscore.most.recent$athlete_id %>% unique(),
                              yesterday.harvest$athlete_id %>% unique())
 missing.players <- yesterday.harvest %>% filter(athlete_id %in% missing.boxscores) %>% select(player, athlete_id)
-missing.players     
+missing.players
 # updating the data pulled from the database with the scores from the last game
 yesterday.harvest <- rows_update(yesterday.harvest, updates, by="athlete_id")
 
 
-# calculating over under winners with the stats 
+# calculating over under winners with the stats
 yesterday.harvest <- yesterday.harvest %>%
     mutate(
         win_pts = ifelse(act_pts > line_pts, "o", "u"),
