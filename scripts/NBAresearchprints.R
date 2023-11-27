@@ -102,7 +102,7 @@ team.ranks.offense <- offense$team.stats %>%
 
 ##### DEFENSE STATS/RANKS ######
 # 1 = best, 30 = worst
-defense <- stats.last.n.games.opp(s, num.game.lookback=lookback.days, box.scores=boxscore.player, schedule=schedule, type=TRUE)
+defense <- stats.last.n.games.opp(s, num.game.lookback=lookback.days, box.scores=boxscore.player, schedule=schedule, type=FALSE)
 # pivot the team total stats longer
 team.ranks.defense <- defense$team.opp.stats %>% 
                             select(team, contains("RANK"), -fgmRank, -fg2mRank) %>% 

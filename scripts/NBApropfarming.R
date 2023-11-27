@@ -90,21 +90,6 @@ dbDisconnect(conn)
 boxscore.player <- load_nba_player_box(s) %>% 
                         filter(game_date <= search.date)
 
-###########################################################################################
-# connect to db
-conn <- harvestDBconnect(league = league)
-dbSendQuery(conn, "SET GLOBAL local_infile = true;")
-
-harvest <- harvest.processing(conn, boxscores, season, s, search.date, dbAppend = FALSE)
-
-
-conn <- harvestDBconnect(league=league)
-dbSendQuery(conn, "SET GLOBAL local_infile = true;")
-
-add.actuals.props(conn, boxscore.player, games.yesterday$game_id)
-
-###########################################################################################
-
 # calculating previous game date
 prev.game.dates <- sort(boxscore.player$game_date %>% unique(), decreasing = TRUE)
 if(is.na(match(search.date, prev.game.dates))){
@@ -352,6 +337,8 @@ roto <- read.csv(paste0('data\\',search.date, '_odds.csv')) %>%
 
 betting.table <-  left_join(x = betting.table, y = roto, by=c('joinName'))
 rm(roto)
+
+#dbx::dbxUpdate(conn, "odds", betting.table, where_cols = c("game_id", "athlete_id", "date"))
 
 # close conns
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
