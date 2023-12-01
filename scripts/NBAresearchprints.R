@@ -88,10 +88,11 @@ schedule <- load_nba_schedule(season = s)
 # 1 = best, 30 = worst
 offense <- stats.last.n.games.offense(s, num.game.lookback=lookback.days, box.scores=boxscore.player, schedule=schedule, type=FALSE)
 team.ranks.offense <- offense$team.stats %>% 
-                            select(team, contains("RANK"), -fgmRank, -fg2mRank) %>% 
+                            select(team, contains("RANK"), -fgmRank, -fg2mRank, -ftmRank, -ftaRank) %>% 
                         pivot_longer(
-                                cols = c(ptsRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, fg3mRank, fg3aRank, fg3PctRank, ftmRank, ftaRank, orebRank, drebRank, 
-                                         rebRank, astRank, stlRank, blkRank, toRank), 
+                                cols = c(ptsRank, rebRank, astRank, fg3mRank,fg3aRank, fg3PctRank, stlRank, blkRank, 
+                                         orebRank, drebRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, #ftmRank, ftaRank,  
+                                         toRank), 
                                 names_to = "stat", 
                                 values_to = "rank"
                             )
@@ -105,20 +106,22 @@ team.ranks.offense <- offense$team.stats %>%
 defense <- stats.last.n.games.opp(s, num.game.lookback=lookback.days, box.scores=boxscore.player, schedule=schedule, type=FALSE)
 # pivot the team total stats longer
 team.ranks.defense <- defense$team.opp.stats %>% 
-                            select(team, contains("RANK"), -fgmRank, -fg2mRank) %>% 
+                            select(team, contains("RANK"), -fgmRank, -fg2mRank, -ftmRank, -ftaRank) %>% 
                             pivot_longer(
-                                cols = c(ptsRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, fg3mRank, fg3aRank, fg3PctRank, ftmRank, ftaRank, orebRank, drebRank, 
-                                         rebRank, astRank, stlRank, blkRank, toRank), 
+                                cols = c(ptsRank, rebRank, astRank, fg3mRank,fg3aRank, fg3PctRank, stlRank, blkRank, 
+                                         orebRank, drebRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, #ftmRank, ftaRank,  
+                                         toRank), 
                                 names_to = "stat", 
                                 values_to = "rank"
                             )
 
 # elongate the opp rank stats to bind it to the comparison
 opp.ranks <- defense$team.opp.stats.by.pos %>% 
-    select(team, athlete_position_abbreviation, contains("RANK"), -fgmRank, -fg2mRank) %>% 
+    select(team, athlete_position_abbreviation, contains("RANK"), -fgmRank, -fg2mRank, -ftmRank, -ftaRank) %>% 
     pivot_longer(
-        cols = c(ptsRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, fg3mRank, fg3aRank, fg3PctRank, ftmRank, ftaRank, orebRank, drebRank, 
-                 rebRank, astRank, stlRank, blkRank, toRank), 
+        cols = c(ptsRank, rebRank, astRank, fg3mRank,fg3aRank, fg3PctRank, stlRank, blkRank, 
+                 orebRank, drebRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, #ftmRank, ftaRank,  
+                 toRank), 
         names_to = "stat", 
         values_to = "rank"
     ) %>% pivot_wider(names_from = athlete_position_abbreviation,
@@ -201,11 +204,11 @@ View(awayDefAdvantage)
 View(homeOffAwayDef)
 View(homeDefAwayOff)
 pos.ranks <- defense$team.opp.stats.by.pos %>% select(team, athlete_position_abbreviation, 
-                                                      ptsRank, rebRank, astRank, fg3mRank,fg3aRank, fg3PctRank,stlRank, blkRank, 
-                                                      orebRank, drebRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, ftmRank, ftaRank,  
+                                                      ptsRank, rebRank, astRank, fg3mRank,fg3aRank, fg3PctRank, stlRank, blkRank, 
+                                                      orebRank, drebRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, #ftmRank, ftaRank,  
                                                        toRank)
 View(pos.ranks)
 team.ranks <- defense$team.opp.stats.by.all.pos %>% select(team, ptsRank, rebRank, astRank, fg3mRank,fg3aRank, fg3PctRank,stlRank, blkRank, 
-                                                           orebRank, drebRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, ftmRank, ftaRank,  
+                                                           orebRank, drebRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, #ftmRank, ftaRank,  
                                                            toRank)
 View(team.ranks)

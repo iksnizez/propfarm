@@ -75,7 +75,7 @@ dbWriteTable(conn, name = "brefmisc", value= bref.pos.estimates,
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 
-## load from db if already pulled on date ##############################
+## load from db if already pulled on date ################################################
 conn <- harvestDBconnect(league = league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
@@ -89,6 +89,7 @@ dbDisconnect(conn)
 # boxscore  will be used to access players that are playing today and agg stats
 boxscore.player <- load_nba_player_box(s) %>% 
                         filter(game_date <= search.date)
+boxscore.player %>% select(game_date) %>% filter(row_number()==1) %>% pull()
 
 # calculating previous game date
 prev.game.dates <- sort(boxscore.player$game_date %>% unique(), decreasing = TRUE)
@@ -199,11 +200,11 @@ matchups.today <- games.today %>% select(home_team_abb, away_team_abb)
 matchups.today.full <- games.today %>% select(home_team_abb, away_team_abb, game_id)
 
 # pulling player stats
-stat.harvest <- propfarming(boxscore.player, 
-                            team.id.today, 
-                            matchups.today.full, 
-                            0,   ####################<<<<<<<<<<<<<<<<<<<<<<<<<<##################### PUT BACK TO 15 after 20 games 
-                            player.info) %>% 
+stat.harvest <- propfarming(box.score.data = boxscore.player, 
+                            team.ids = team.id.today, 
+                            matchups.today = matchups.today.full, 
+                            minFilter = 10,
+                            player_info = player.info) %>% 
                     ungroup()
 #addding date
 stat.harvest$date <- search.date
@@ -427,6 +428,10 @@ harvest <- harvest %>%
              player = athlete_display_name,
              pos = athlete_position_abbreviation)
            ) 
+
+scores <- process.harvest(harvest = harvest)
+View(scores)
+
 #####
 
 ##################
