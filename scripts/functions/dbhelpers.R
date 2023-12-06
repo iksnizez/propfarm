@@ -4,7 +4,7 @@ library(jsonlite)
 ####################
 ## FUNCTION TO CONNECT TO DB
 ####################
-harvestDBconnect <- function(league){
+harvestDBconnect <- function(league, path_override=NULL){
     # function to connect to harvest data base
     # input league to control the db access
     # outputs the db connection
@@ -12,7 +12,13 @@ harvestDBconnect <- function(league){
     league <- tolower(league)
     
     #import credentials
-    path <- '../../Notes-General/config.txt'
+    if(!is.null(path_override)){
+        path <- path_override
+    }
+    else{
+        path <- '../../Notes-General/config.txt' 
+    }
+    
     creds<-readLines(path)
     creds<-lapply(creds,fromJSON)
     

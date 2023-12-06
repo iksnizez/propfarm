@@ -20,6 +20,7 @@ pymysql = "*"
 sqlalchemy = "*"
 py-ball = "*"
 openpyxl = "*"
+pymc3 = "*"
 
 [dev-packages]
 

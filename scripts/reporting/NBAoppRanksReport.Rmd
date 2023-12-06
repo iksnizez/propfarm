@@ -1,0 +1,305 @@
+---
+title: "NBA team ranks"
+author: "propfarm"
+date: "`r Sys.Date()`"
+output: html_document
+params:
+    homeTeam: LAL
+    awayTeam: PHX
+    gameDate: '2023-12-05'
+    lnGames: 15
+    dbPath: '../../../../Notes-General/config.txt'
+    show_code: FALSE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(gt)
+library(hoopR)
+library(DBI)
+library(RMySQL)
+source("../../scripts/functions/NBAdatacrackers.R")
+source("../../scripts/functions/dbhelpers.R")
+
+# 1 = best, 30 = worst - 1 offense + 30 defense = best matchup, 30 off + 1 def = worst
+```
+
+```{r }
+
+league <- 'nba'
+season  <-  "2023-24"
+s <-  2024
+search.date <- params$gameDate
+
+home.team <- params$homeTeam
+away.team <- params$awayTeam
+
+# getting the teams playing on the search date
+schedule <- nba_schedule(season = season) %>% 
+                mutate(
+                    home_team_tricode  = case_when(
+                        home_team_tricode == "NOP" ~ "NO",
+                        home_team_tricode == "NYK" ~ "NY",
+                        home_team_tricode == "SAS" ~ "SA",
+                        home_team_tricode == "UTA" ~ "UTAH",
+                        home_team_tricode == "WAS" ~ "WSH",
+                        home_team_tricode == "GSW" ~ "GS",
+                        TRUE ~ home_team_tricode
+                    ),
+                    away_team_tricode  = case_when(
+                        away_team_tricode == "NOP" ~ "NO",
+                        away_team_tricode == "NYK" ~ "NY",
+                        away_team_tricode == "SAS" ~ "SA",
+                        away_team_tricode == "UTA" ~ "UTAH",
+                        away_team_tricode == "WAS" ~ "WSH",
+                        away_team_tricode == "GSW" ~ "GS",
+                        TRUE ~ away_team_tricode
+                    )
+                )
+#getting allstar dates to filter out
+dates.allstar <- schedule %>%
+    filter(season_type_description == 'All-Star') %>% 
+    select(game_date)
+
+# pulling the most recent pos. estimates from database
+conn <- harvestDBconnect(league = league, path_override=params$dbPath)
+dbSendQuery(conn, "SET GLOBAL local_infile = true;")
+
+query.pos.ests <- "SELECT * FROM brefmisc WHERE date = (SELECT MAX(date) FROM brefmisc)"
+bref.pos.estimates <-  dbGetQuery(conn, query.pos.ests)
+
+dbSendQuery(conn, "SET GLOBAL local_infile = false;")
+dbDisconnect(conn)
+
+
+# boxscore  will be used to access players that are playing today and agg stats
+boxscore.player <- load_nba_player_box(s) %>% 
+                        filter(game_date < search.date ) %>%
+                        # FILTER OUT ASG
+                        filter(!game_date %in%  dates.allstar) %>%
+                        left_join(bref.pos.estimates %>% 
+                                      select(hooprId, pos) %>% 
+                                      rename(athlete_id = hooprId), 
+                                  by = c('athlete_id')
+                        ) %>% 
+                        mutate(athlete_position_abbreviation = case_when(
+                                                                is.na(pos) ~ athlete_position_abbreviation,
+                                                                TRUE ~ pos
+                                                                )
+                        ) %>%
+                        # change remaining generic positions 
+                        mutate(
+                            athlete_position_abbreviation = case_when(
+                                athlete_position_abbreviation == "G" ~ "SG",
+                                athlete_position_abbreviation == "F" ~ "SF",
+                                TRUE ~ athlete_position_abbreviation
+                            )
+                        )
+
+
+schedule.today <- schedule %>% filter(game_date == search.date)
+
+###### gathering team stats and rankings ######
+
+# when teams have less than 15 games played, look back to the min played so rank inputs are equal - only important early season
+min.gp <- hoopR::nba_leaguestandings()$Standings %>%
+    select(WINS, LOSSES) %>% 
+    mutate(gp = as.numeric(WINS) + as.numeric(LOSSES)) %>%
+    select(gp) %>% 
+    min()
+lookback.days <- min(min.gp, params$lnGames)
+
+schedule <- load_nba_schedule(season = s) 
+
+##### OFFENSE STATS/RANKS ######
+# using data cracker to calc off boxscores offensive ranks.
+# 1 = best, 30 = worst
+offense <- stats.last.n.games.offense(s, num.game.lookback=params$lnGames, 
+                                      box.scores=boxscore.player, schedule=schedule, 
+                                      type=FALSE, report.out=TRUE)
+
+team.ranks.offense <- offense$team.stats %>% 
+                            select(team, contains("RANK"), -fgmRank, -fg2mRank, -ftmRank, -ftaRank) %>% 
+                        pivot_longer(
+                            cols = c(ptsRank, rebRank, astRank, fg3mRank,fg3aRank, fg3PctRank, 
+                                     stlRank, blkRank, orebRank, drebRank, fgaRank, fgPctRank, 
+                                     fg2aRank, fg2PctRank, #ftmRank, ftaRank,  
+                                     toRank), 
+                                names_to = "stat", 
+                                values_to = "rank"
+                            )
+
+
+##### DEFENSE STATS/RANKS ######
+# 1 = best, 30 = worst
+defense <- stats.last.n.games.opp(s, num.game.lookback=params$lnGames, 
+                                  box.scores=boxscore.player, schedule=schedule, 
+                                  type=FALSE, report.out=TRUE)
+
+# pivot the team total stats longer
+team.ranks.defense <- defense$team.opp.stats %>% 
+                            select(team, contains("RANK"), -fgmRank, -fg2mRank, -ftmRank, -ftaRank) %>% 
+                            pivot_longer(
+                                cols = c(ptsRank, rebRank, astRank, fg3mRank,fg3aRank, fg3PctRank, 
+                                         stlRank, blkRank, orebRank, drebRank, fgaRank, fgPctRank, 
+                                         fg2aRank, fg2PctRank, #ftmRank, ftaRank, 
+                                         toRank), 
+                                names_to = "stat", 
+                                values_to = "rank"
+                            )
+
+```
+
+
+```{r}
+
+
+# elongate the opp rank stats to bind it to the comparison
+opp.ranks <- defense$team.opp.stats.by.pos %>% 
+    select(team, athlete_position_abbreviation, contains("RANK"), -fgmRank, -fg2mRank, -ftmRank, -ftaRank) %>% 
+    filter(team == home.team | team == away.team) %>% 
+    pivot_longer(
+        cols = c(ptsRank, rebRank, astRank, fg3mRank,fg3aRank, fg3PctRank, stlRank, blkRank, 
+                 orebRank, drebRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, #ftmRank, ftaRank,  
+                 toRank), 
+        names_to = "stat", 
+        values_to = "rank"
+    ) %>% pivot_wider(names_from = athlete_position_abbreviation,
+                      values_from = c(rank))
+
+
+
+
+homeO <- team.ranks.offense %>% 
+    filter(team == home.team) %>% 
+    rename(home = team,
+           offense = rank)
+homeD <- team.ranks.defense %>% 
+    filter(team == home.team) %>% 
+    rename(home = team,
+           defense = rank)
+
+awayO <- team.ranks.offense %>% 
+    filter(team == away.team) %>% 
+    rename(away = team,
+           offense = rank) %>% 
+    select(-stat)
+awayD <- team.ranks.defense %>% 
+    filter(team == away.team) %>% 
+    rename(away = team,
+           defense = rank) %>% 
+    select(-stat)
+
+
+
+homeOffAwayDef <- cbind(homeO, awayD)
+homeOffAwayDef<- homeOffAwayDef %>% select(home, offense, stat, defense, away) #%>%
+                    # this would add the positional ranks for the defense
+                    #left_join(opp.ranks, by=c("away" = "team", "stat" = "stat"))
+
+homeDefAwayOff <- cbind(homeD, awayO)
+homeDefAwayOff <- homeDefAwayOff %>% select(home, defense, stat, offense, away) #%>%
+                    # this would add the positional ranks for the defense 
+                    #left_join(opp.ranks, by=c("home" = "team", "stat" = "stat"))
+
+
+
+off <- homeOffAwayDef %>% select(home, offense, stat) %>% 
+                            rename(rank = offense, team=home) %>% 
+                            filter(team == home.team)
+
+def <- homeOffAwayDef %>% select(away, defense, stat) %>% 
+                            rename(rank = defense, team=away) %>% 
+                            filter(team == away.team)
+
+pyradata <- rbind(off,def)
+
+# pyradata <- pyradata %>%
+#                 mutate(stat = as.factor(stat)) %>%
+#                 #mutate(offense = offense * -1) %>%
+#                 mutate(team = factor(team, levels=c("IND", "BOS")))
+pyradata
+```
+
+
+
+```{r }
+ggplot(data = pyradata,
+       mapping = aes(x = ifelse(team == home.team,-rank, rank),
+                     y = stat, 
+                     fill = team)) +
+  geom_col() +
+  scale_x_continuous(breaks=seq(-30,30,5), labels=c(1,5,10,15,20,25,30, 25, 20, 15,10,5, 1)) +
+  labs(x = "RANK") +
+  ggtitle("   OFFENSE <<< >>> DEFENSE") +
+  theme(plot.title = element_text(hjust = 0.46)) +
+  scale_fill_manual(aesthetics =c("colour", "fill"),  values=c("#fdb927","#e56020"))
+
+
+
+
+```
+```{r}
+# Set factor order
+pyradata <- pyradata %>% mutate(stat = factor(stat, levels= rev(c("ptsRank", "rebRank", "astRank", "fg3mRank","fg3aRank", "fg3PctRank", "stlRank", "blkRank", 
+                                                      "orebRank", "drebRank", "fgaRank", "fgPctRank", "fg2aRank", "fg2PctRank", #ftmRank, ftaRank,  
+                                                       "toRank"))))
+
+# # Build ggplot2 plot objects
+gg1 <- pyradata %>%
+    filter(team == home.team) %>%
+    ggplot(aes(y=stat, x=rank, fill = team, label = rank)) +
+    geom_col(colour = "#552583", fill="#fdb927") +
+    xlim(c(0, round(1.0 * max(pyradata$rank)))) +
+    xlab(paste(home.team, "Offense")) +
+    theme(#axis.text.x=element_blank(), #remove x axis labels
+        #axis.ticks.x=element_blank(), #remove x axis ticks
+        #axis.text.y=element_text(size=10,hjust=0.25),  
+        axis.text.y=element_blank(), #remove y axis labels
+        axis.ticks.y=element_blank(),  #remove y axis ticks
+        axis.title.y =element_blank(),
+        axis.text.y.right = element_blank(),
+        plot.margin = unit(c(0,5, 0, 0), "pt")
+        ) +
+    scale_x_continuous(breaks=seq(0,30,5), labels=c(30,25,20,15,10,5,1), expand=c(0,0))
+
+gg2 <- pyradata %>%
+    filter(team == home.team) %>%
+    ggplot(aes(y=stat, x=0, label = stat)) +
+    geom_text(fontface = "bold") +
+    theme_void()
+
+gg3 <- pyradata %>%
+    filter(team == away.team) %>%
+    ggplot(aes(y=stat, x=-rank, fill = team, label = rank)) +
+    geom_col(colour = "#29127a", fill="#e56020") +
+    xlim(c(round(-1.0 * max(pyradata$rank)), 0)) +
+    xlab(paste(away.team, "Defense")) +
+      theme(#axis.text.x=element_blank(), #remove x axis labels
+        #axis.ticks.x=element_blank(), #remove x axis ticks
+        #axis.text.y=element_blank(),  #remove y axis labels
+        #axis.ticks.y=element_blank(),  #remove y axis ticks
+        axis.title.y = element_blank(),
+        plot.margin = unit(c(0,0, 0, 0), "pt")
+        ) +
+    scale_x_continuous(breaks=seq(-30,0,5), labels=c(1,5,10,15,20,25,""), expand=c(0,0)) 
+    
+    
+
+# Arrange plot objects in 1 column with horizontal scales aligned
+library(ggpubr)
+library(gridExtra)
+# ggarrange(gg3, gg1, # gg1, 
+#           nrow = 1, 
+#           ncol = 2, 
+#           common.legend = TRUE, 
+#           align = "v", 
+#           widths = c(1,1), 
+#           heights = c(1,1)
+#          )
+
+grid.arrange(gg3, gg1, nrow=1, ncol=2, widths=c(1,.85))
+```
+
+

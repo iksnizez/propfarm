@@ -54,8 +54,6 @@ bref.pos.estimates <- players.played.position.estimate(season= s)
 conn <- harvestDBconnect(league = league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
-bref.pos.estimates
-
 # query to retrieve player id since roto doesn't have one
 players.query <- 'SELECT joinName, actnetId actnetPlayerId, hooprId FROM players'
 playersdb <- dbGetQuery(conn, players.query) %>%
@@ -63,7 +61,7 @@ playersdb <- dbGetQuery(conn, players.query) %>%
                     joinName = trimws(tolower(stringr::str_replace_all(joinName, suffix.rep)))
                 ) 
 
-# add actnetid to roto
+# add actnetid to basketball ref estimates
 bref.pos.estimates <- bref.pos.estimates %>% 
     left_join(playersdb, by = 'joinName')
 
@@ -75,7 +73,7 @@ dbWriteTable(conn, name = "brefmisc", value= bref.pos.estimates,
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 
-## load from db if already pulled on date ################################################
+################# load from db if already pulled on date ################################################
 conn <- harvestDBconnect(league = league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
@@ -88,7 +86,7 @@ dbDisconnect(conn)
 
 # boxscore  will be used to access players that are playing today and agg stats
 boxscore.player <- load_nba_player_box(s) %>% 
-                        filter(game_date <= search.date)
+                        filter(game_date < search.date)
 boxscore.player %>% select(game_date) %>% filter(row_number()==1) %>% pull()
 
 # calculating previous game date
@@ -442,9 +440,15 @@ View(scores)
 #####
 
 
+
+
 ##################
 # add current day harvest to database
 ##################
+# filter any players out if needed
+# remove.players <- c()
+# harvest <- harvest %>%  filter(!player %in% remove.players)
+
 conn <- harvestDBconnect(league = league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 dbWriteTable(conn, name = "props", value= harvest, row.names = FALSE, overwrite = FALSE, append = TRUE)
