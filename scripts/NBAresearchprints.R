@@ -18,7 +18,8 @@ source("scripts/functions/dbhelpers.R")
 league <- 'nba'
 season  <-  "2023-24"
 s <-  2024
-lookback <- 0 ######################################################## negative numbers are for historical games
+lookback <- 0 ######################################################## negative numbers are for historical games # BOXSCORE 
+last.n.lookback.days <- 10 ########################################## last n games to look back in the stat agg rankings.
 search.date <- Sys.Date() - lookback
 today.date.char <- format(search.date, "%Y%m%d")
 
@@ -51,7 +52,7 @@ dates.allstar <- schedule %>%
 
 # boxscore  will be used to access players that are playing today and agg stats
 boxscore.player <- load_nba_player_box(s) %>% 
-                        filter(game_date <= search.date ) %>%
+                        filter(game_date < search.date ) %>%
                         # FILTER OUT ASG
                         filter(!game_date %in%  dates.allstar) %>%
                         left_join(bref.pos.estimates %>% select(hooprId, pos) %>% rename(athlete_id = hooprId), by = c('athlete_id')
@@ -79,14 +80,16 @@ min.gp <- hoopR::nba_leaguestandings()$Standings %>%
     mutate(gp = as.numeric(WINS) + as.numeric(LOSSES)) %>%
     select(gp) %>% 
     min()
-lookback.days <- min(min.gp,15)
+lookback.days <- min(min.gp, last.n.lookback.days)
 
 schedule <- load_nba_schedule(season = s) 
 
 ##### OFFENSE STATS/RANKS ######
 # using data cracker to calc off boxscores offensive ranks.
 # 1 = best, 30 = worst
-offense <- stats.last.n.games.offense(s, num.game.lookback=lookback.days, box.scores=boxscore.player, schedule=schedule, type=FALSE)
+offense <- stats.last.n.games.offense(s, num.game.lookback=lookback.days, 
+                                      box.scores=boxscore.player, schedule=schedule,
+                                      no.date=FALSE)
 team.ranks.offense <- offense$team.stats %>% 
                             select(team, contains("RANK"), -fgmRank, -fg2mRank, -ftmRank, -ftaRank) %>% 
                         pivot_longer(
@@ -103,7 +106,9 @@ team.ranks.offense <- offense$team.stats %>%
 
 ##### DEFENSE STATS/RANKS ######
 # 1 = best, 30 = worst
-defense <- stats.last.n.games.opp(s, num.game.lookback=lookback.days, box.scores=boxscore.player, schedule=schedule, type=FALSE)
+defense <- stats.last.n.games.opp(s, num.game.lookback=lookback.days, 
+                                  box.scores=boxscore.player, schedule=schedule,
+                                  no.date=FALSE)
 # pivot the team total stats longer
 team.ranks.defense <- defense$team.opp.stats %>% 
                             select(team, contains("RANK"), -fgmRank, -fg2mRank, -ftmRank, -ftaRank) %>% 

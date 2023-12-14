@@ -470,7 +470,7 @@ split.sum.box.scores <- function(box.scores, gids, opp=TRUE, t= NULL, min = 0, t
 ####################
 ## FUNCTION TO RETRIEVE TEAM OPPONENT RANKS FROM LAST N games
 ####################
-stats.last.n.games.opp  <- function(season, num.game.lookback=15, type = TRUE, box.scores=NULL, schedule=NULL, report.out=FALSE){
+stats.last.n.games.opp  <- function(season, num.game.lookback=15, box.scores=NULL, schedule=NULL, no.date=TRUE){
     # ingest season year, number of games (15 default), data frame of player boxscores,
     # and data frame of the season schedule
     # output dataframe for teams stats allowed to opponents, dataframe for the stats grouped by
@@ -516,11 +516,11 @@ stats.last.n.games.opp  <- function(season, num.game.lookback=15, type = TRUE, b
 
         if(t == teams[1]){
             #retrieve gid boxscores and split att/made, aggregating stats by team, position
-            grouped <- split.sum.box.scores(box.scores, gids, opp=TRUE, t=t, min=0, type=type)
+            grouped <- split.sum.box.scores(box.scores, gids, opp=TRUE, t=t, min=0, type=no.date)
         }
         else{
             #retrieve gid boxscores and split att/made, aggregating stats by team, position
-            temp <- split.sum.box.scores(box.scores, gids, opp=TRUE, t=t, min=0, type=type)
+            temp <- split.sum.box.scores(box.scores, gids, opp=TRUE, t=t, min=0, type=no.date)
             grouped <- rbind(grouped, temp)
         }
     }
@@ -536,26 +536,26 @@ stats.last.n.games.opp  <- function(season, num.game.lookback=15, type = TRUE, b
     
     stats.team.opp.total.pos <- stats.team.opp.total.pos %>%
         summarize(
-            fgmCount = sum(fgmCount),
-            fgaCount = sum(fgaCount),
-            fgPct = sum(fgmCount) / sum(fgaCount),
-            fg2mCount = sum(fg2mCount),
-            fg2aCount = sum(fg2aCount),
-            fg2Pct = (sum(fgmCount) - sum(fg3mCount)) / (sum(fgaCount) - sum(fg3aCount)),
+            ptsCount = sum(ptsCount),
+            rebCount = sum(rebCount),
+            astCount = sum(astCount),
             fg3mCount = sum(fg3mCount),
             fg3aCount = sum(fg3aCount),
             fg3Pct = sum(fg3mCount) / sum(fg3aCount),
-            ftmCount = sum(ftmCount),
-            ftaCount = sum(ftaCount),
+            fg2Pct = (sum(fgmCount) - sum(fg3mCount)) / (sum(fgaCount) - sum(fg3aCount)),
+            fgPct = sum(fgmCount) / sum(fgaCount),
+            blkCount = sum(blkCount),
+            stlCount = sum(stlCount),
+            toCount = sum(toCount),
             orebCount = sum(orebCount),
             drebCount = sum(drebCount),
-            rebCount = sum(rebCount),
-            astCount = sum(astCount),
-            stlCount = sum(stlCount),
-            blkCount = sum(blkCount),
-            toCount = sum(toCount),
-            pfCount = sum(pfCount),
-            ptsCount = sum(ptsCount)
+            fgmCount = sum(fgmCount),
+            fgaCount = sum(fgaCount),
+            fg2mCount = sum(fg2mCount),
+            fg2aCount = sum(fg2aCount),
+            ftmCount = sum(ftmCount),
+            ftaCount = sum(ftaCount),
+            pfCount = sum(pfCount)
         )
     
     # groups the agg stats by team for totals over n games *** GROUPS BY TEAM ONLY
@@ -565,136 +565,84 @@ stats.last.n.games.opp  <- function(season, num.game.lookback=15, type = TRUE, b
         group_by(
           team
         )
-
     
     stats.team.opp.total <- stats.team.opp.total %>%
       summarize(
-        fgmCount = sum(fgmCount),
-        fgaCount = sum(fgaCount),
-        fgPct = sum(fgmCount) / sum(fgaCount), 
-        fg2mCount = sum(fgmCount) - sum(fg3mCount),
-        fg2aCount = sum(fgaCount) - sum(fg3aCount),
-        fg2Pct = (sum(fgmCount) - sum(fg3mCount)) / (sum(fgaCount) - sum(fg3aCount)),
+        ptsCount = sum(ptsCount),
+        rebCount = sum(rebCount),
+        astCount = sum(astCount),
         fg3mCount = sum(fg3mCount),
         fg3aCount = sum(fg3aCount),
         fg3Pct = sum(fg3mCount) / sum(fg3aCount),
-        ftmCount = sum(ftmCount),
-        ftaCount = sum(ftaCount),
+        fg2Pct = (sum(fgmCount) - sum(fg3mCount)) / (sum(fgaCount) - sum(fg3aCount)),
+        fgPct = sum(fgmCount) / sum(fgaCount),
+        blkCount = sum(blkCount),
+        stlCount = sum(stlCount),
+        toCount = sum(toCount),
         orebCount = sum(orebCount),
         drebCount = sum(drebCount),
-        rebCount = sum(rebCount),
-        astCount = sum(astCount),
-        stlCount = sum(stlCount),
-        blkCount = sum(blkCount),
-        toCount = sum(toCount),
-        pfCount = sum(pfCount),
-        ptsCount = sum(ptsCount)
+        fgmCount = sum(fgmCount),
+        fgaCount = sum(fgaCount),
+        fg2mCount = sum(fg2mCount),
+        fg2aCount = sum(fg2aCount),
+        ftmCount = sum(ftmCount),
+        ftaCount = sum(ftaCount),
+        pfCount = sum(pfCount)
       ) 
     
-      if(!report.out){
-        stats.team.opp.total <- stats.team.opp.total %>% 
-                                  mutate(fgmRank = rank(fgmCount),
-                                         fgaRank = rank(fgaCount),
-                                         fgPctRank = rank(fgPct),
-                                         fg2mRank = rank(fg2mCount),
-                                         fg2aRank = rank(fg2aCount),
-                                         fg2PctRank = rank(fg2Pct),
-                                         fg3mRank = rank(fg3mCount),
-                                         fg3aRank = rank(fg3aCount),
-                                         fg3PctRank = rank(fg3Pct),
-                                         ftmRank = rank(ftmCount),
-                                         ftaRank = rank(ftaCount),
-                                         orebRank = rank(orebCount),
-                                         drebRank = rank(drebCount),
-                                         rebRank = rank(rebCount),
-                                         astRank = rank(astCount),
-                                         stlRank = rank(stlCount),
-                                         blkRank = rank(blkCount),
-                                         toRank = rank(toCount),
-                                         ptsRank = rank(ptsCount)
-                                  )
-      } else{
-        stats.team.opp.total <- stats.team.opp.total %>%
-                                  mutate(fgmRank = rank(-1* fgmCount),
-                                         fgaRank = rank(-1* fgaCount),
-                                         fgPctRank = rank(-1* fgPct),
-                                         fg2mRank = rank(-1* fg2mCount),
-                                         fg2aRank = rank(-1* fg2aCount),
-                                         fg2PctRank = rank(-1* fg2Pct),
-                                         fg3mRank = rank(-1* fg3mCount),
-                                         fg3aRank = rank(-1* fg3aCount),
-                                         fg3PctRank = rank(-1* fg3Pct),
-                                         ftmRank = rank(-1* ftmCount),
-                                         ftaRank = rank(-1* ftaCount),
-                                         orebRank = rank(-1* orebCount),
-                                         drebRank = rank(-1* drebCount),
-                                         rebRank = rank(-1* rebCount),
-                                         astRank = rank(-1* astCount),
-                                         stlRank = rank(-1* stlCount),
-                                         blkRank = rank(-1* blkCount),
-                                         toRank = rank(-1* toCount),
-                                         ptsRank = rank(-1* ptsCount)
-                                  )
-      }
-      
+      stats.team.opp.total <- stats.team.opp.total %>% 
+                                mutate(
+                                       ptsRank = rank(ptsCount),
+                                       rebRank = rank(rebCount),
+                                       astRank = rank(astCount),
+                                       fg3mRank = rank(fg3mCount),
+                                       fg3aRank = rank(fg3aCount),
+                                       fg3PctRank = rank(fg3Pct),
+                                       fg2PctRank = rank(fg2Pct),
+                                       fgPctRank = rank(fgPct),
+                                       blkRank = rank(blkCount),
+                                       stlRank = rank(stlCount),
+                                       toRank = rank(-toCount),
+                                       orebRank = rank(orebCount),
+                                       drebRank = rank(drebCount),
+                                       fgmRank = rank(fgmCount),
+                                       fgaRank = rank(fgaCount),
+                                       fg2mRank = rank(fg2mCount),
+                                       fg2aRank = rank(fg2aCount),
+                                       ftmRank = rank(ftmCount),
+                                       ftaRank = rank(ftaCount)
+                                )
     
     # creates dataframes for each position to easily create ranks for each  position and stat
     positions <- c("PG", "SG", "SF", "PF", "C")
     for(pos in positions){
         var.name <- pos
-        
                
-         if(!report.out){
-           assign(var.name, stats.team.opp.total.pos %>% 
-                    filter(athlete_position_abbreviation == pos) %>%
-                    ungroup() %>% 
-             mutate(fgmRank = rank(fgmCount),
-                    fgaRank = rank(fgaCount),
-                    fgPctRank = rank(fgPct),
-                    fg2mRank = rank(fg2mCount),
-                    fg2aRank = rank(fg2aCount),
-                    fg2PctRank = rank(fg2Pct),
-                    fg3mRank = rank(fg3mCount),
-                    fg3aRank = rank(fg3aCount),
-                    fg3PctRank = rank(fg3Pct),
-                    ftmRank = rank(ftmCount),
-                    ftaRank = rank(ftaCount),
-                    orebRank = rank(orebCount),
-                    drebRank = rank(drebCount),
-                    rebRank = rank(rebCount),
-                    astRank = rank(astCount),
-                    stlRank = rank(stlCount),
-                    blkRank = rank(blkCount),
-                    toRank = rank(toCount),
-                    ptsRank = rank(ptsCount)
-             )
+         assign(var.name, stats.team.opp.total.pos %>% 
+                  filter(athlete_position_abbreviation == pos) %>%
+                  ungroup() %>% 
+           mutate(
+                  ptsRank = rank(ptsCount),
+                  rebRank = rank(rebCount),
+                  astRank = rank(astCount),
+                  fg3mRank = rank(fg3mCount),
+                  fg3aRank = rank(fg3aCount),
+                  fg3PctRank = rank(fg3Pct),
+                  fg2PctRank = rank(fg2Pct),
+                  fgPctRank = rank(fgPct),
+                  blkRank = rank(blkCount),
+                  stlRank = rank(stlCount),
+                  toRank = rank(-toCount),
+                  fgmRank = rank(fgmCount),
+                  fgaRank = rank(fgaCount),
+                  fg2mRank = rank(fg2mCount),
+                  fg2aRank = rank(fg2aCount),
+                  ftmRank = rank(ftmCount),
+                  ftaRank = rank(ftaCount),
+                  orebRank = rank(orebCount),
+                  drebRank = rank(drebCount),
            )
-         } else{
-           assign(var.name, stats.team.opp.total.pos %>% 
-                    filter(athlete_position_abbreviation == pos) %>%
-                    ungroup() %>%
-                    mutate(fgmRank = rank(-1* fgmCount),
-                    fgaRank = rank(-1* fgaCount),
-                    fgPctRank = rank(-1* fgPct),
-                    fg2mRank = rank(-1* fg2mCount),
-                    fg2aRank = rank(-1* fg2aCount),
-                    fg2PctRank = rank(-1* fg2Pct),
-                    fg3mRank = rank(-1* fg3mCount),
-                    fg3aRank = rank(-1* fg3aCount),
-                    fg3PctRank = rank(-1* fg3Pct),
-                    ftmRank = rank(-1* ftmCount),
-                    ftaRank = rank(-1* ftaCount),
-                    orebRank = rank(-1* orebCount),
-                    drebRank = rank(-1* drebCount),
-                    rebRank = rank(-1* rebCount),
-                    astRank = rank(-1* astCount),
-                    stlRank = rank(-1* stlCount),
-                    blkRank = rank(-1* blkCount),
-                    toRank = rank(-1* toCount),
-                    ptsRank = rank(-1* ptsCount)
-                    )
-           )
-         }
+         )
     }
     # binding the position dfs with their ranks into a single df
     position.ranks <- rbind(PG, SG)
@@ -717,7 +665,7 @@ stats.last.n.games.opp  <- function(season, num.game.lookback=15, type = TRUE, b
 ####################
 ## FUNCTION TO RETRIEVE TEAM OFFENSIVE RANKS FROM LAST N games
 ####################
-stats.last.n.games.offense  <- function(season, num.game.lookback=15, type = TRUE, box.scores=NULL, schedule=NULL, report.out=FALSE){
+stats.last.n.games.offense  <- function(season, num.game.lookback=15, box.scores=NULL, schedule=NULL, no.date=TRUE){
   # ingest season year, number of games (15 default), data frame of player boxscores,
   # and data frame of the season schedule
   # output dataframe for teams stats , dataframe for the stats grouped by
@@ -759,11 +707,11 @@ stats.last.n.games.offense  <- function(season, num.game.lookback=15, type = TRU
     
     if(t == teams[1]){
       #retrieve gid boxscores and split att/made, aggregating stats by team, position
-      grouped <- split.sum.box.scores(box.scores, gids, opp=FALSE, t=t, min=0, type=type)
+      grouped <- split.sum.box.scores(box.scores, gids, opp=FALSE, t=t, min=0, type=no.date)
     }
     else{
       #retrieve gid boxscores and split att/made, aggregating stats by team, position
-      temp <- split.sum.box.scores(box.scores, gids,opp=FALSE, t=t, min=0, type=type)
+      temp <- split.sum.box.scores(box.scores, gids,opp=FALSE, t=t, min=0, type=no.date)
       grouped <- rbind(grouped, temp)
     }
   }
@@ -779,26 +727,26 @@ stats.last.n.games.offense  <- function(season, num.game.lookback=15, type = TRU
 
   stats.team.total.pos <- stats.team.total.pos %>%
     summarize(
-      fgmCount = sum(fgmCount),
-      fgaCount = sum(fgaCount),
-      fgPct = sum(fgmCount) / sum(fgaCount),
-      fg2mCount = sum(fg2mCount),
-      fg2aCount = sum(fg2aCount),
-      fg2Pct = (sum(fgmCount) - sum(fg3mCount)) / (sum(fgaCount) - sum(fg3aCount)),
+      ptsCount = sum(ptsCount),
+      rebCount = sum(rebCount),
+      astCount = sum(astCount),
       fg3mCount = sum(fg3mCount),
       fg3aCount = sum(fg3aCount),
       fg3Pct = sum(fg3mCount) / sum(fg3aCount),
-      ftmCount = sum(ftmCount),
-      ftaCount = sum(ftaCount),
+      fg2Pct = (sum(fgmCount) - sum(fg3mCount)) / (sum(fgaCount) - sum(fg3aCount)),
+      fgPct = sum(fgmCount) / sum(fgaCount),
+      blkCount = sum(blkCount),
+      stlCount = sum(stlCount),
+      toCount = sum(toCount),
       orebCount = sum(orebCount),
       drebCount = sum(drebCount),
-      rebCount = sum(rebCount),
-      astCount = sum(astCount),
-      stlCount = sum(stlCount),
-      blkCount = sum(blkCount),
-      toCount = sum(toCount),
-      pfCount = sum(pfCount),
-      ptsCount = sum(ptsCount)
+      fgmCount = sum(fgmCount),
+      fgaCount = sum(fgaCount),
+      fg2mCount = sum(fg2mCount),
+      fg2aCount = sum(fg2aCount),
+      ftmCount = sum(ftmCount),
+      ftaCount = sum(ftaCount),
+      pfCount = sum(pfCount)
     )
   
   ### groups the agg stats by team for totals over n games *** GROUPS BY TEAM ONLY
@@ -811,131 +759,80 @@ stats.last.n.games.offense  <- function(season, num.game.lookback=15, type = TRU
   
   stats.team.total <- stats.team.total %>%
     summarize(
-      fgmCount = sum(fgmCount),
-      fgaCount = sum(fgaCount),
-      fgPct = sum(fgmCount) / sum(fgaCount), 
-      fg2mCount = sum(fgmCount) - sum(fg3mCount),
-      fg2aCount = sum(fgaCount) - sum(fg3aCount),
-      fg2Pct = (sum(fgmCount) - sum(fg3mCount)) / (sum(fgaCount) - sum(fg3aCount)),
+      ptsCount = sum(ptsCount),
+      rebCount = sum(rebCount),
+      astCount = sum(astCount),
       fg3mCount = sum(fg3mCount),
       fg3aCount = sum(fg3aCount),
       fg3Pct = sum(fg3mCount) / sum(fg3aCount),
-      ftmCount = sum(ftmCount),
-      ftaCount = sum(ftaCount),
+      fg2Pct = (sum(fgmCount) - sum(fg3mCount)) / (sum(fgaCount) - sum(fg3aCount)),
+      fgPct = sum(fgmCount) / sum(fgaCount),
+      blkCount = sum(blkCount),
+      stlCount = sum(stlCount),
+      toCount = sum(toCount),
       orebCount = sum(orebCount),
       drebCount = sum(drebCount),
-      rebCount = sum(rebCount),
-      astCount = sum(astCount),
-      stlCount = sum(stlCount),
-      blkCount = sum(blkCount),
-      toCount = sum(toCount),
-      pfCount = sum(pfCount),
-      ptsCount = sum(ptsCount)
+      fgmCount = sum(fgmCount),
+      fgaCount = sum(fgaCount),
+      fg2mCount = sum(fg2mCount),
+      fg2aCount = sum(fg2aCount),
+      ftmCount = sum(ftmCount),
+      ftaCount = sum(ftaCount),
+      pfCount = sum(pfCount)
     ) 
   
-  if(!report.out){
-      stats.team.total <- stats.team.total %>% 
-        mutate(fgmRank = rank(fgmCount),
-               fgaRank = rank(fgaCount),
-               fgPctRank = rank(fgPct),
-               fg2mRank = rank(fg2mCount),
-               fg2aRank = rank(fg2aCount),
-               fg2PctRank = rank(fg2Pct),
-               fg3mRank = rank(fg3mCount),
-               fg3aRank = rank(fg3aCount),
-               fg3PctRank = rank(fg3Pct),
-               ftmRank = rank(ftmCount),
-               ftaRank = rank(ftaCount),
-               orebRank = rank(orebCount),
-               drebRank = rank(drebCount),
-               rebRank = rank(rebCount),
-               astRank = rank(astCount),
-               stlRank = rank(stlCount),
-               blkRank = rank(blkCount),
-               toRank = rank(toCount),
-               ptsRank = rank(ptsCount)
-        )
-    } else{
-      stats.team.total <- stats.team.total %>%
-        mutate(fgmRank = rank(-1* fgmCount),
-               fgaRank = rank(-1* fgaCount),
-               fgPctRank = rank(-1* fgPct),
-               fg2mRank = rank(-1* fg2mCount),
-               fg2aRank = rank(-1* fg2aCount),
-               fg2PctRank = rank(-1* fg2Pct),
-               fg3mRank = rank(-1* fg3mCount),
-               fg3aRank = rank(-1* fg3aCount),
-               fg3PctRank = rank(-1* fg3Pct),
-               ftmRank = rank(-1* ftmCount),
-               ftaRank = rank(-1* ftaCount),
-               orebRank = rank(-1* orebCount),
-               drebRank = rank(-1* drebCount),
-               rebRank = rank(-1* rebCount),
-               astRank = rank(-1* astCount),
-               stlRank = rank(-1* stlCount),
-               blkRank = rank(-1* blkCount),
-               toRank = rank(-1* toCount),
-               ptsRank = rank(-1* ptsCount)
-        )
-    }
+    stats.team.total <- stats.team.total %>% 
+      mutate(
+             ptsRank = rank(-ptsCount),
+             rebRank = rank(-rebCount),
+             astRank = rank(-astCount),
+             fg3mRank = rank(-fg3mCount),
+             fg3aRank = rank(-fg3aCount),
+             fg3PctRank = rank(-fg3Pct),
+             fg2PctRank = rank(-fg2Pct),
+             fgPctRank = rank(-fgPct),
+             blkRank = rank(-blkCount),
+             stlRank = rank(-stlCount),
+             toRank = rank(toCount),
+             orebRank = rank(-orebCount),
+             drebRank = rank(-drebCount),
+             fgmRank = rank(-fgmCount),
+             fgaRank = rank(-fgaCount),
+             fg2mRank = rank(-fg2mCount),
+             fg2aRank = rank(-fg2aCount),
+             ftmRank = rank(-ftmCount),
+             ftaRank = rank(-ftaCount)
+    )
   
   # creates dataframes for each position to easily create ranks for each  position and stat
   positions <- c("PG", "SG", "SF", "PF", "C")
   for(pos in positions){
     var.name <- pos
-    if(!report.out){
-      
-      assign(var.name, stats.team.total.pos %>% 
-               filter(athlete_position_abbreviation == pos) %>%
-               ungroup() %>% 
-               mutate(fgmRank = rank(-1* fgmCount),
-                      fgaRank = rank(-1* fgaCount),
-                      fgPctRank = rank(-1* fgPct),
-                      fg2mRank = rank(-1* fg2mCount),
-                      fg2aRank = rank(-1* fg2aCount),
-                      fg2PctRank = rank(-1* fg2Pct),
-                      fg3mRank = rank(-1* fg3mCount),
-                      fg3aRank = rank(-1* fg3aCount),
-                      fg3PctRank = rank(-1* fg3Pct),
-                      ftmRank = rank(-1* ftmCount),
-                      ftaRank = rank(-1* ftaCount),
-                      orebRank = rank(-1* orebCount),
-                      drebRank = rank(-1* drebCount),
-                      rebRank = rank(-1* rebCount),
-                      astRank = rank(-1* astCount),
-                      stlRank = rank(-1* stlCount),
-                      blkRank = rank(-1* blkCount),
-                      toRank = rank(-1* toCount),
-                      ptsRank = rank(-1* ptsCount)
-               )
+    assign(var.name, stats.team.total.pos %>% 
+             filter(athlete_position_abbreviation == pos) %>%
+             ungroup() %>% 
+             mutate(
+                    ptsRank = rank(-1* ptsCount),
+                    rebRank = rank(-1* rebCount),
+                    astRank = rank(-1* astCount),
+                    fg3mRank = rank(-1* fg3mCount),
+                    fg3aRank = rank(-1* fg3aCount),
+                    fg3PctRank = rank(-1* fg3Pct),
+                    fg2PctRank = rank(-1* fg2Pct),
+                    fgPctRank = rank(-1* fgPct),
+                    blkRank = rank(-1* blkCount),
+                    stlRank = rank(-1* stlCount),
+                    toRank = rank(toCount),
+                    orebRank = rank(-1* orebCount),
+                    drebRank = rank(-1* drebCount),
+                    fgmRank = rank(-1* fgmCount),
+                    fgaRank = rank(-1* fgaCount),
+                    fg2mRank = rank(-1* fg2mCount),
+                    fg2aRank = rank(-1* fg2aCount),
+                    ftmRank = rank(-1* ftmCount),
+                    ftaRank = rank(-1* ftaCount)
+             )
       )
-    }else{
-      assign(var.name, stats.team.total.pos %>% 
-               filter(athlete_position_abbreviation == pos) %>%
-               ungroup() %>% 
-               mutate(fgmRank = rank(fgmCount),
-                      fgaRank = rank(fgaCount),
-                      fgPctRank = rank(fgPct),
-                      fg2mRank = rank(fg2mCount),
-                      fg2aRank = rank(fg2aCount),
-                      fg2PctRank = rank(fg2Pct),
-                      fg3mRank = rank(fg3mCount),
-                      fg3aRank = rank(fg3aCount),
-                      fg3PctRank = rank(fg3Pct),
-                      ftmRank = rank(ftmCount),
-                      ftaRank = rank(ftaCount),
-                      orebRank = rank(orebCount),
-                      drebRank = rank(drebCount),
-                      rebRank = rank(rebCount),
-                      astRank = rank(astCount),
-                      stlRank = rank(stlCount),
-                      blkRank = rank(blkCount),
-                      toRank = rank(toCount),
-                      ptsRank = rank(ptsCount)
-               )
-      )
-    }
-             
   }
   # binding the position dfs with their ranks into a single df
   position.ranks <- rbind(PG, SG)

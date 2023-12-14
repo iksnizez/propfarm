@@ -22,6 +22,7 @@ league <- 'nba'
 season  <-  "2023-24"
 s <-  2024
 n.games <- 3
+last.n.games.rank <- 10 ##<<<<<<<<<<<<<< <<<<<<<<<<<<<<<<<< # used to calc the last n games stats teams have surrended to pos.
 date_change <- 0 ##<<<<<<<<<<<<<<<<<<<<<<<< <<<<<<<<<<<<<<<< ######use negative for going back days
 cutoff_date <- Sys.Date() - 12
 search.date <- Sys.Date() + date_change
@@ -401,7 +402,7 @@ min.gp <- hoopR::nba_leaguestandings()$Standings %>%
                     mutate(gp = as.numeric(WINS) + as.numeric(LOSSES)) %>%
                     select(gp) %>% 
                     min()
-lookback.days.opp.ranks <- min(min.gp,15)
+lookback.days.opp.ranks <- min(min.gp, last.n.games.rank)   ############################## <<<<<<<<<<<<<<<<<<<<<<<<< last N game ranks
 
 # calling function to return teams opponent stats
 opp.stats <- stats.last.n.games.opp(season=s,
@@ -429,7 +430,6 @@ harvest <- harvest %>%
 
 scores <- process.harvest(harvest = harvest)
 View(scores)
-
 #####
 
 ##################
@@ -438,9 +438,6 @@ View(scores)
 #game.lines.today <- games.betting.info(gids.today)
 #harvest <- harvest %>% left_join(game.lines.today, by="game_id")
 #####
-
-
-
 
 ##################
 # add current day harvest to database
