@@ -48,6 +48,7 @@ suffix.rep <- c("\\."="", "`"="", "'"="",
 #############
 # retrieve most recent basketball-reference player position estimate - using the players highest % as their POS assignment
 #############
+######################### >>>>>>>>>>>>>FUNCTION IN DATACRACKERS NEEDS TO BE UPDATED FOR PLAYERS MOVING, FILTER OUT OLD TEAMS
 # use custom function to retrieve basketball-reference position estimates
 bref.pos.estimates <- players.played.position.estimate(season= s)
 
@@ -56,7 +57,7 @@ conn <- harvestDBconnect(league = league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
 # query to retrieve player id since roto doesn't have one
-players.query <- 'SELECT joinName, actnetId actnetPlayerId, hooprId FROM players'
+players.query <- 'SELECT joinName, actnetId actnetPlayerId, hooprId FROM players WHERE hooprId <> 932' # 2 brandon williams, 932 is from decades ago. filter out to remove dups when joining
 playersdb <- dbGetQuery(conn, players.query) %>%
                 mutate(
                     joinName = trimws(tolower(stringr::str_replace_all(joinName, suffix.rep)))
@@ -83,11 +84,14 @@ bref.pos.estimates <-  dbGetQuery(conn, query.pos.ests)
 
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
+
+bref.pos.estimates <- bref.pos.estimates %>% distinct()
 ########
 
 # boxscore  will be used to access players that are playing today and agg stats
 boxscore.player <- load_nba_player_box(s) %>% 
-                        filter(game_date < search.date)
+                        filter(game_date < search.date) %>% 
+                        distinct()
 boxscore.player %>% select(game_date) %>% filter(row_number()==1) %>% pull()
 
 # calculating previous game date
@@ -409,7 +413,7 @@ opp.stats <- stats.last.n.games.opp(season=s,
                        num.game.lookback =lookback.days.opp.ranks, 
                        box.scores=boxscore.player, 
                        schedule=schedule,
-                       type=TRUE)
+                       no.date=TRUE)
 
 # dropping the count columns and keeping the ranks
 opp.position.ranks <- opp.stats$team.opp.stats.by.pos %>%
@@ -516,6 +520,7 @@ missing.boxscores <- setdiff(boxscore.most.recent$athlete_id %>% unique(),
 missing.players <- yesterday.harvest %>% filter(athlete_id %in% missing.boxscores) %>% select(player, athlete_id)
 missing.players
 # updating the data pulled from the database with the scores from the last game
+#updates <- updates %>% distinct()
 yesterday.harvest <- rows_update(yesterday.harvest, updates, by="athlete_id")
 
 

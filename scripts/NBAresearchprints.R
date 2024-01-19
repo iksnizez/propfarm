@@ -82,7 +82,7 @@ min.gp <- hoopR::nba_leaguestandings()$Standings %>%
     min()
 lookback.days <- min(min.gp, last.n.lookback.days)
 
-schedule <- load_nba_schedule(season = s) 
+schedule <- load_nba_schedule(season = s) %>% filter(date < search.date)
 
 ##### OFFENSE STATS/RANKS ######
 # using data cracker to calc off boxscores offensive ranks.
@@ -160,19 +160,19 @@ for (row in 1:nrow(schedule.today)){
     
     # column binding the home and away teams 
     if (row == 1){
-        homeOffAwayDef <- cbind(homeO, awayD) 
-        homeDefAwayOff <- cbind(homeD, awayO) 
+        homeOff <- cbind(homeO, awayD) 
+        homeDef <- cbind(homeD, awayO) 
     }
     else{
         homeOffAwayDef.temp <- cbind(homeO, awayD) 
         homeDefAwayOff.temp <- cbind(homeD, awayO)
         
-        homeOffAwayDef <- rbind(homeOffAwayDef, homeOffAwayDef.temp)
-        homeDefAwayOff <- rbind(homeDefAwayOff, homeDefAwayOff.temp)
+        homeOff <- rbind(homeOff, homeOffAwayDef.temp)
+        homeDef <- rbind(homeDef, homeDefAwayOff.temp)
     }
 }
 
-homeOffAwayDef<- homeOffAwayDef %>% select(home, offense, stat, defense, away) %>% 
+homeOff<- homeOff %>% select(home, offense, stat, defense, away) %>% 
                     mutate(homeOffMatchup = case_when(
                             offense < 10 & defense > 20 ~ 2,
                             offense < 15 & defense > 15 ~ 1,
@@ -184,7 +184,7 @@ homeOffAwayDef<- homeOffAwayDef %>% select(home, offense, stat, defense, away) %
                     ) %>% 
                     left_join(opp.ranks, by=c("away" = "team", "stat" = "stat"))
 
-homeDefAwayOff <- homeDefAwayOff %>% select(home, defense, stat, offense, away) %>% 
+homeDef <- homeDef %>% select(home, defense, stat, offense, away) %>% 
                     mutate(awayOffMatchup = case_when(
                         offense < 10 & defense > 20 ~ 2,
                         offense < 15 & defense > 15 ~ 1,
@@ -198,22 +198,56 @@ homeDefAwayOff <- homeDefAwayOff %>% select(home, defense, stat, offense, away) 
 
 
 # 1 = best, 30 = worst - 1 offense + 30 defense = best matchup, 30 off + 1 def = worst
-homeOffAdvantage <- homeOffAwayDef %>% filter(homeOffMatchup > 0 & homeOffMatchup!= 3)
-awayOffAdvantage <- homeDefAwayOff %>% filter(awayOffMatchup > 0 & awayOffMatchup!= 3)
-homeDefAdvantage <- homeDefAwayOff %>% filter(awayOffMatchup < 0)
-awayDefAdvantage <- homeOffAwayDef %>% filter(homeOffMatchup < 0)
+#homeOffAdvantage <- homeOff %>% filter(homeOffMatchup > 0 & homeOffMatchup!= 3)
+#awayOffAdvantage <- homeDef %>% filter(awayOffMatchup > 0 & awayOffMatchup!= 3)
+#homeDefAdvantage <- homeDef %>% filter(awayOffMatchup < 0)
+#awayDefAdvantage <- homeOff %>% filter(homeOffMatchup < 0)
 #View(homeOffAdvantage)
 #View(awayOffAdvantage)
 #View(homeDefAdvantage)
 #View(awayDefAdvantage)
-View(homeOffAwayDef)
-View(homeDefAwayOff)
-pos.ranks <- defense$team.opp.stats.by.pos %>% select(team, athlete_position_abbreviation, 
+View(homeOff)
+View(homeDef)
+d.pos.rank <- defense$team.opp.stats.by.pos %>% select(team, athlete_position_abbreviation, 
                                                       ptsRank, rebRank, astRank, fg3mRank,fg3aRank, fg3PctRank, stlRank, blkRank, 
                                                       orebRank, drebRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, #ftmRank, ftaRank,  
                                                        toRank)
-View(pos.ranks)
-team.ranks <- defense$team.opp.stats.by.all.pos %>% select(team, ptsRank, rebRank, astRank, fg3mRank,fg3aRank, fg3PctRank,stlRank, blkRank, 
+
+d.team.rank <- defense$team.opp.stats.by.all.pos %>% select(team, ptsRank, rebRank, astRank, fg3mRank,fg3aRank, fg3PctRank,stlRank, blkRank, 
                                                            orebRank, drebRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, #ftmRank, ftaRank,  
                                                            toRank)
-View(team.ranks)
+
+
+o.pos.rank <- offense$team.stats.by.pos %>% select(team, athlete_position_abbreviation, 
+                                                          ptsRank, rebRank, astRank, fg3mRank,fg3aRank, fg3PctRank, stlRank, blkRank, 
+                                                          orebRank, drebRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, #ftmRank, ftaRank,  
+                                                          toRank)
+
+o.team.rank <- offense$team.stats %>% select(team, ptsRank, rebRank, astRank, fg3mRank,fg3aRank, fg3PctRank,stlRank, blkRank, 
+                                                           orebRank, drebRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, #ftmRank, ftaRank,  
+                                                           toRank)
+View(d.pos.rank)
+View(o.pos.rank)
+View(d.team.rank)
+View(o.team.rank)
+
+
+##################
+# Team opp. stat distribution -Team stats allowed to opponent distribution across positions
+##################
+stat <- c('pts', 'ast', 'reb', 'fg3m')
+colName <- paste(stat, "Count", sep="")
+
+statDist <- defense$team.opp.stats.by.pos %>% 
+    group_by(team) %>% 
+    select(team, athlete_position_abbreviation, all_of(colName)) %>% 
+    mutate(
+        ptsPct = ptsCount / sum(ptsCount),
+        rebPct = rebCount / sum(rebCount),
+        astPct = astCount / sum(astCount),
+        fg3mPct = fg3mCount / sum(fg3mCount),
+    ) %>% 
+    select(team, athlete_position_abbreviation, ptsCount, ptsPct, rebCount, rebPct, astCount, astPct, fg3mCount, fg3mPct)
+
+View(statDist)
+#####

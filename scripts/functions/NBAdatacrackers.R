@@ -488,6 +488,7 @@ stats.last.n.games.opp  <- function(season, num.game.lookback=15, box.scores=NUL
     # checks if schedule dataframe is provided and pulls schedule data if not
     if(is.null(schedule)){
         schedule <- hoopR::load_nba_schedule(seasons = season)  %>%
+          filter(date < Sys.Date()) %>% 
           mutate(TEAM_ABBREVIATION = case_when(
             TEAM_ABBREVIATION == "GSW" ~ "GS",
             TRUE ~ TEAM_ABBREVIATION
@@ -682,7 +683,12 @@ stats.last.n.games.offense  <- function(season, num.game.lookback=15, box.scores
   
   # checks if schedule dataframe is provided and pulls schedule data if not
   if(is.null(schedule)){
-    schedule <- hoopR::load_nba_schedule(seasons = season)
+    schedule <- hoopR::load_nba_schedule(seasons = season) %>% 
+      filter(date < Sys.Date())%>% 
+      mutate(TEAM_ABBREVIATION = case_when(
+        TEAM_ABBREVIATION == "GSW" ~ "GS",
+        TRUE ~ TEAM_ABBREVIATION
+      ))
   }
   
   # schedule data for only games played
@@ -861,7 +867,8 @@ player.box.score.avgs <- function(box_scores, game_ids, stats_player_name){
     box_scores <- box_scores %>%
                     mutate(athlete_display_name = tolower(athlete_display_name)) %>%
                     filter(game_id %in% game_ids & 
-                           athlete_display_name == stats_player_name) %>% 
+                           athlete_display_name == stats_player_name,
+                           did_not_play == FALSE) %>% 
                     rename(c(
                       fgm = field_goals_made,
                       fga = field_goals_attempted,
@@ -944,7 +951,7 @@ player.missed.games.stats <- function(team_abb, missed_player_names, stats_playe
         )%>%
         select(id)
     
-    # this will hold the  games played for the player(s) we are interest in their misses
+    # this will hold the  games played for the player(s) we are interested in their misses
     games.played <- c()
     
     # looping through each player to return their missed game ids
@@ -952,7 +959,7 @@ player.missed.games.stats <- function(team_abb, missed_player_names, stats_playe
         #filtering box scores to the player of interest
         games.player <- box_scores %>%
             mutate(athlete_display_name = tolower(athlete_display_name)) %>%
-            filter(athlete_display_name == player) %>%
+            filter(athlete_display_name == player & did_not_play == FALSE) %>%
             select(game_id)
         
         games.played <- append(games.played, games.player$game_id)
@@ -1280,13 +1287,39 @@ players.played.position.estimate <- function(season){
              team = i
       ) %>% 
       mutate_at(c('PG', 'SG', 'SF', 'PF', 'C'), replace_na, 0)
+    
     # filter out traded players that aren't udpated in the site
+    #trade
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Nicolas Batum' & team == 'LAC'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'P.J. Tucker' & team == 'PHI'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Robert Covington' & team == 'LAC'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'KJ Martin' & team == 'LAC'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Filip Petrušev' & team == 'PHI'))
+    # acquistion
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Daniel Theis' & team == 'IND'))
+    #trade
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'OG Anunoby' & team == 'TOR'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Precious Achiuwa' & team == 'TOR'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Malachi Flynn' & team == 'TOR'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'RJ Barrett' & team == 'NYK'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Immanuel Quickley' & team == 'NYK'))
+    #acquisition
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Kenneth Lofton Jr.' & team == 'MEM'))
+    #acquisition
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Dylan Windler' & team == 'NYK'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Skylar Mays' & team == 'POR'))
+    #trade
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Bruce Brown' & team == 'IND'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Jordan Nwora' & team == 'IND'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Kira Lewis' & team == 'NOP'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Pascal Siakam' & team == 'TOR'))
+    #trade
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Danilo Gallinari' & team == 'WAS'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Mike Muscala' & team == 'WAS'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Isaiah Livers' & team == 'DET'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Marvin Bagley III' & team == 'DET'))
+    
+
     team.pos.estimates <- team.pos.estimates  %>% unique()
     
     # combine temp team df to agg df
