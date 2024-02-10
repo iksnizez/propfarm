@@ -103,6 +103,7 @@ team.ranks.offense <- offense$team.stats %>%
 #offense_ranks <- hoopR::nba_leaguedashteamstats(last_n_games = 5)$LeagueDashTeamStats %>% 
 #                    select(TEAM_ID, TEAM_NAME, contains("RANK"))
 #View(offense$team.stats)
+#####
 
 ##### DEFENSE STATS/RANKS ######
 # 1 = best, 30 = worst
@@ -227,10 +228,10 @@ o.team.rank <- offense$team.stats %>% select(team, ptsRank, rebRank, astRank, fg
                                                            orebRank, drebRank, fgaRank, fgPctRank, fg2aRank, fg2PctRank, #ftmRank, ftaRank,  
                                                            toRank)
 View(d.pos.rank)
-View(o.pos.rank)
 View(d.team.rank)
+View(o.pos.rank)
 View(o.team.rank)
-
+#####
 
 ##################
 # Team opp. stat distribution -Team stats allowed to opponent distribution across positions
@@ -250,4 +251,105 @@ statDist <- defense$team.opp.stats.by.pos %>%
     select(team, athlete_position_abbreviation, ptsCount, ptsPct, rebCount, rebPct, astCount, astPct, fg3mCount, fg3mPct)
 
 View(statDist)
+#####
+
+##################
+# Player Rebs and Ast data
+##################
+conn <- harvestDBconnect(league = league)
+#dbSendQuery(conn, "SET GLOBAL local_infile = true;")
+
+#SQL query to select Ln games and return sum of stats
+###### 
+# ln <- 3
+# query.passing.filtered <- paste("SELECT PLAYER_NAME, pid, sum(AST), sum(POTENTIAL_AST) 
+# FROM
+# (SELECT * 
+# 	FROM (
+# 		SELECT *, ROW_NUMBER() OVER (PARTITION BY pid ORDER BY date DESC) AS n
+# 		FROM statsplayerpassing
+# 	) AS x
+# WHERE n <=", ln ,") as y
+# GROUP BY x.PLAYER_NAME;", sep="")
+######
+query.passing.all <- "SELECT 
+                        PLAYER_NAME player, pid nbaId, tid, date, CAST(MIN AS UNSIGNED) min,
+                        CAST(PASSES_MADE AS UNSIGNED) passes_made, CAST(PASSES_RECEIVED AS UNSIGNED) passes_rec, 
+                        CAST(AST AS UNSIGNED) ast, CAST(POTENTIAL_AST AS UNSIGNED) pot_ast
+                    FROM statsplayerpassing WHERE DATE > '2023-10-23' ORDER BY pid, date DESC"
+df.passing <- dbGetQuery(conn, query.passing.all) 
+
+query.rebounding.all <- "SELECT 
+                          PLAYER_NAME player, pid nbaId, tid, date, CAST(MIN AS UNSIGNED) min,
+                          CAST(REB AS UNSIGNED) reb, CAST(REB_CHANCES AS UNSIGNED) pot_reb, 
+                          CAST(REB_CHANCE_DEFER AS UNSIGNED) defer_reb, CAST(AVG_REB_DIST AS UNSIGNED) reb_dist
+                        FROM statsplayerrebounding WHERE DATE > '2023-10-23' ORDER BY pid, date DESC"
+df.rebounding<- dbGetQuery(conn, query.rebounding.all)
+
+#dbSendQuery(conn, "SET GLOBAL local_infile = false;")
+dbDisconnect(conn)
+
+passL3 <- df.passing %>% 
+    arrange(nbaId, desc(date)) %>% 
+    group_by(player, nbaId) %>%
+    slice_head(n = 3) %>%
+    summarise('astL3' = round(mean(ast),1),
+              'potAstL3' = round(mean(pot_ast),1),
+              'passMadeL3' = round(mean(passes_made),1),
+              'passRecL3' = round(mean(passes_rec),1)
+    ) 
+passL10 <- df.passing %>% 
+    arrange(nbaId, desc(date)) %>% 
+    group_by(player, nbaId) %>%
+    slice_head(n = 10) %>%
+    summarise('astL10' = round(mean(ast),1),
+              'potAstL10' = round(mean(pot_ast),1),
+              'passMadeL10' = round(mean(passes_made),1),
+              'passRecL10' = round(mean(passes_rec),1)
+    ) 
+passAll <- df.passing %>% 
+    arrange(nbaId, desc(date)) %>% 
+    group_by(player, nbaId) %>%
+    summarise('ast' = round(mean(ast),1),
+              'potAst' = round(mean(pot_ast),1),
+              'passMade' = round(mean(passes_made),1),
+              'passRec' = round(mean(passes_rec),1)) 
+
+df.passing <- merge(passL3, passL10, by=c('player', 'nbaId'))
+df.passing <- merge(df.passing, passAll, by=c('player', 'nbaId')) %>% 
+    select(player, nbaId, astL3, astL10, ast, potAstL3, potAstL10, potAst, passMadeL3, passMadeL10, passMade, passRecL3, passRecL10, passRec)
+
+remove(passL3, passL10, passAll)
+
+rebL3 <- df.rebounding %>% 
+    arrange(nbaId, desc(date)) %>% 
+    group_by(player, nbaId) %>%
+    slice_head(n = 3) %>%
+    summarise('rebL3' = round(mean(reb),1),
+              'potRebL3' = round(mean(pot_reb),1),
+              'deferRebL3' = round(mean(defer_reb),1)
+    ) 
+rebL10 <- df.rebounding %>% 
+    arrange(nbaId, desc(date)) %>% 
+    group_by(player, nbaId) %>%
+    slice_head(n = 10) %>%
+    summarise('rebL10' = round(mean(reb),1),
+              'potRebL10' = round(mean(pot_reb),1),
+              'deferRebL10' = round(mean(defer_reb),1)
+    ) 
+rebAll <- df.rebounding %>% 
+    arrange(nbaId, desc(date)) %>% 
+    group_by(player, nbaId) %>%
+    summarise('reb' = round(mean(reb),1),
+              'potReb' = round(mean(pot_reb),1),
+              'deferReb' = round(mean(defer_reb),1)
+    ) 
+df.rebounding <- merge(rebL3, rebL10, by=c('player', 'nbaId'))
+df.rebounding <- merge(df.rebounding, rebAll, by=c('player', 'nbaId')) %>% 
+    select(player, nbaId, rebL3, rebL10, reb, potRebL3, potRebL10, potReb, deferRebL3, deferRebL10, deferReb)
+
+remove(rebL3, rebL10, rebAll)
+
+View(df.passing)
+View(df.rebounding)
 #####

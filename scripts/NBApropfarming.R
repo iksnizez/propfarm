@@ -75,6 +75,7 @@ dbWriteTable(conn, name = "brefmisc", value= bref.pos.estimates,
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 
+
 ################# load from db if already pulled on date ################################################
 conn <- harvestDBconnect(league = league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
@@ -86,8 +87,9 @@ dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 
 bref.pos.estimates <- bref.pos.estimates %>% distinct()
+#return duplicated rows after players move teams
+#View(bref.pos.estimates[duplicated(bref.pos.estimates$player)|duplicated(bref.pos.estimates$player, fromLast = TRUE),])
 ########
-
 # boxscore  will be used to access players that are playing today and agg stats
 boxscore.player <- load_nba_player_box(s) %>% 
                         filter(game_date < search.date) %>% 
@@ -250,99 +252,102 @@ betting.table <- dbGetQuery(conn, paste0(query, odds.date, "'")) %>%
             team == "GSW" ~ "GS",
             TRUE ~ team
         ))
-
-# get roto odds from saved file to fill in any missing from actn
-roto <- read.csv(paste0('data\\',search.date, '_odds.csv')) %>%
-    rename(prop = stat) %>% 
-    mutate(
-        prop = case_when(
-            prop == 'PTS' ~ 'pts',
-            prop == 'REB' ~ 'reb',
-            prop == 'AST' ~ 'ast',
-            prop == 'STL' ~ 'stl',
-            prop == 'BLK' ~ 'blk',
-            prop == 'PTSREBAST' ~ 'pra',
-            prop == 'PTSREB' ~ 'pr',
-            prop == 'PTSAST' ~ 'pa',
-            prop == 'REBAST' ~ 'ra',
-            prop == 'STLBLK' ~ 'sb',
-            prop == 'THREES' ~ 'threes',
-            prop == 'TURNOVERS' ~ 'to'
-        ),
-        PLAYER= trimws(tolower(stringr::str_replace_all(PLAYER, suffix.rep))),
-        joinName = tolower(PLAYER)
-    ) %>% 
-    pivot_wider(names_from = prop,
-                values_from = c(line, oOdds, uOdds))
-
-# list of players in roto but not actn
-missing.actn <- setdiff(tolower(roto$PLAYER), betting.table$PLAYER)
-
-#filter roto widen df to only missing actn players
-roto <- roto %>% 
-            filter(PLAYER %in% missing.actn)
-
-# query to retrieve player id since roto doesn't have one
-players.query <- 'SELECT joinName, actnetId actnetPlayerId, hooprId FROM players'
-playersdb <- dbGetQuery(conn, players.query)
-
-#roto doesn't have suffixes but everything else does. UGH!
-# creating name column without suffixes to join with betting data until ID list is compiled
-
-playersdb <- playersdb %>%
-    mutate(
-        joinName = trimws(tolower(stringr::str_replace_all(joinName, suffix.rep)))
-    ) 
-
-# add actnetid to roto
-roto <- roto %>% 
-            left_join(playersdb, by = 'joinName') #%>% select(-line_to, -oOdds_to, -uOdds_to)
-
-rm(playersdb)
-
-# Save missing prop types from actnet and remove from roto for the first bind with betting table
-# the first bind adds the players that actnet was missing but roto had. after this bind
-# a second bind will add the missing props from actnet with the roto data
-missing.props <- setdiff(colnames(roto), colnames(betting.table))
-roto <- roto %>% 
-            select(-all_of(missing.props))
-
-# adding any odds that actnet had that roto didn't so the dfs can be rbind
-roto[,setdiff(colnames(betting.table), colnames(roto))] <- NA
-
-#add roto to betting table
-betting.table <- rbind(betting.table, roto)
-rm(roto)
-
-# adding in missing actnet props
-roto <- read.csv(paste0('data\\',search.date, '_odds.csv')) %>%
-    rename(prop = stat) %>% 
-    mutate(
-        prop = case_when(
-            prop == 'PTS' ~ 'pts',
-            prop == 'REB' ~ 'reb',
-            prop == 'AST' ~ 'ast',
-            prop == 'STL' ~ 'stl',
-            prop == 'BLK' ~ 'blk',
-            prop == 'PTSREBAST' ~ 'pra',
-            prop == 'PTSREB' ~ 'pr',
-            prop == 'PTSAST' ~ 'pa',
-            prop == 'REBAST' ~ 'ra',
-            prop == 'STLBLK' ~ 'sb',
-            prop == 'THREES' ~ 'threes',
-            prop == 'TURNOVERS' ~ 'to'
-        ),
-        PLAYER= trimws(tolower(stringr::str_replace_all(PLAYER, suffix.rep))),
-        joinName = tolower(PLAYER)
-    ) %>% 
-    pivot_wider(names_from = prop,
-                values_from = c(line, oOdds, uOdds)) %>%
-    select(joinName, missing.props)
-
-betting.table <-  left_join(x = betting.table, y = roto, by=c('joinName'))
-rm(roto)
-
-#dbx::dbxUpdate(conn, "odds", betting.table, where_cols = c("game_id", "athlete_id", "date"))
+##########
+# ROTO DOESN"T ALLOW THE CSV DOWNLOADS FOR FREE ANYMORE
+##########
+# # get roto odds from saved file to fill in any missing from actn
+# roto <- read.csv(paste0('data\\',search.date, '_odds.csv')) %>%
+#     rename(prop = stat) %>% 
+#     mutate(
+#         prop = case_when(
+#             prop == 'PTS' ~ 'pts',
+#             prop == 'REB' ~ 'reb',
+#             prop == 'AST' ~ 'ast',
+#             prop == 'STL' ~ 'stl',
+#             prop == 'BLK' ~ 'blk',
+#             prop == 'PTSREBAST' ~ 'pra',
+#             prop == 'PTSREB' ~ 'pr',
+#             prop == 'PTSAST' ~ 'pa',
+#             prop == 'REBAST' ~ 'ra',
+#             prop == 'STLBLK' ~ 'sb',
+#             prop == 'THREES' ~ 'threes',
+#             prop == 'TURNOVERS' ~ 'to'
+#         ),
+#         PLAYER= trimws(tolower(stringr::str_replace_all(PLAYER, suffix.rep))),
+#         joinName = tolower(PLAYER)
+#     ) %>% 
+#     pivot_wider(names_from = prop,
+#                 values_from = c(line, oOdds, uOdds))
+# 
+# # list of players in roto but not actn
+# missing.actn <- setdiff(tolower(roto$PLAYER), betting.table$PLAYER)
+# 
+# #filter roto widen df to only missing actn players
+# roto <- roto %>% 
+#             filter(PLAYER %in% missing.actn)
+# 
+# # query to retrieve player id since roto doesn't have one
+# players.query <- 'SELECT joinName, actnetId actnetPlayerId, hooprId FROM players'
+# playersdb <- dbGetQuery(conn, players.query)
+# 
+# #roto doesn't have suffixes but everything else does. UGH!
+# # creating name column without suffixes to join with betting data until ID list is compiled
+# 
+# playersdb <- playersdb %>%
+#     mutate(
+#         joinName = trimws(tolower(stringr::str_replace_all(joinName, suffix.rep)))
+#     ) 
+# 
+# # add actnetid to roto
+# roto <- roto %>% 
+#             left_join(playersdb, by = 'joinName') #%>% select(-line_to, -oOdds_to, -uOdds_to)
+# 
+# rm(playersdb)
+# 
+# # Save missing prop types from actnet and remove from roto for the first bind with betting table
+# # the first bind adds the players that actnet was missing but roto had. after this bind
+# # a second bind will add the missing props from actnet with the roto data
+# missing.props <- setdiff(colnames(roto), colnames(betting.table))
+# roto <- roto %>% 
+#             select(-all_of(missing.props))
+# 
+# # adding any odds that actnet had that roto didn't so the dfs can be rbind
+# roto[,setdiff(colnames(betting.table), colnames(roto))] <- NA
+# 
+# #add roto to betting table
+# betting.table <- rbind(betting.table, roto)
+# rm(roto)
+# 
+# # adding in missing actnet props
+# roto <- read.csv(paste0('data\\',search.date, '_odds.csv')) %>%
+#     rename(prop = stat) %>% 
+#     mutate(
+#         prop = case_when(
+#             prop == 'PTS' ~ 'pts',
+#             prop == 'REB' ~ 'reb',
+#             prop == 'AST' ~ 'ast',
+#             prop == 'STL' ~ 'stl',
+#             prop == 'BLK' ~ 'blk',
+#             prop == 'PTSREBAST' ~ 'pra',
+#             prop == 'PTSREB' ~ 'pr',
+#             prop == 'PTSAST' ~ 'pa',
+#             prop == 'REBAST' ~ 'ra',
+#             prop == 'STLBLK' ~ 'sb',
+#             prop == 'THREES' ~ 'threes',
+#             prop == 'TURNOVERS' ~ 'to'
+#         ),
+#         PLAYER= trimws(tolower(stringr::str_replace_all(PLAYER, suffix.rep))),
+#         joinName = tolower(PLAYER)
+#     ) %>% 
+#     pivot_wider(names_from = prop,
+#                 values_from = c(line, oOdds, uOdds)) %>%
+#     select(joinName, missing.props)
+# 
+# betting.table <-  left_join(x = betting.table, y = roto, by=c('joinName'))
+# rm(roto)
+# 
+# #dbx::dbxUpdate(conn, "odds", betting.table, where_cols = c("game_id", "athlete_id", "date"))
+#####
 
 # close conns
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
@@ -412,7 +417,7 @@ lookback.days.opp.ranks <- min(min.gp, last.n.games.rank)   ####################
 opp.stats <- stats.last.n.games.opp(season=s,
                        num.game.lookback =lookback.days.opp.ranks, 
                        box.scores=boxscore.player, 
-                       schedule=schedule,
+                       schedule=schedule %>% filter(date < search.date),
                        no.date=TRUE)
 
 # dropping the count columns and keeping the ranks
@@ -434,6 +439,7 @@ harvest <- harvest %>%
 
 scores <- process.harvest(harvest = harvest)
 View(scores)
+#a <- scores
 #####
 
 ##################
@@ -449,13 +455,13 @@ View(scores)
 # filter any players out if needed
 # remove.players <- c()
 # harvest <- harvest %>%  filter(!player %in% remove.players)
-
 conn <- harvestDBconnect(league = league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 dbWriteTable(conn, name = "props", value= harvest, row.names = FALSE, overwrite = FALSE, append = TRUE)
 #dbx::dbxInsert(conn=conn, table="props", records = harvest)
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
+#####
 
 ##################
 # retrieving stat line from the last game and updating db
@@ -512,7 +518,8 @@ updates <- boxscore.most.recent %>%
                 select(athlete_id, act_min, act_pts, act_reb, act_ast,
                        act_stl, act_blk, act_threes, act_to, act_pra,
                        act_pr, act_pa, act_ra, act_sb) %>%
-                filter(athlete_id %in% yesterday.harvest$athlete_id)
+                filter(athlete_id %in% yesterday.harvest$athlete_id) %>% 
+                unique()
 
 # players who were in the harvest data but did not show up in the boxscore
 missing.boxscores <- setdiff(boxscore.most.recent$athlete_id %>% unique(),
