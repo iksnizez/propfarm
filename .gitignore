@@ -2,6 +2,8 @@
 .Rhistory
 .RData
 .Ruserdata
+*/.ipynb_checkpoints/
+*/scratch/
 data/
 output/
 "props  notes.txt"
@@ -14,4 +16,3 @@ scripts/bettingscrape.R
 scripts/.ipynb_checkpoints/
 scripts/sqlTesting.sql
 scripts/linescraper-Copy1.ipynb
-*/.ipynb_checkpoints/
