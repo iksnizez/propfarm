@@ -21,6 +21,7 @@ sqlalchemy = "*"
 py-ball = "*"
 openpyxl = "*"
 pymc3 = "*"
+dash = "*"
 
 [dev-packages]
 

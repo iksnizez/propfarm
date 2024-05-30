@@ -5,7 +5,7 @@ library(jsonlite)
 library(dplyr)
 library(stringr)
 source("scripts/functions/dbhelpers.R")
-remotes::install_github("sportsdataverse/wehoop")
+#remotes::install_github("sportsdataverse/wehoop")
 
 conn <- harvestDBconnect(league='wnba')
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
@@ -48,19 +48,21 @@ suffix.rep <- c("\\."="", "'"="", "'"=""
 p <- wehoop::wnba_commonallplayers()$CommonAllPlayers
 # creating cleaned name join for NBA names and IDs
 currentWNBA <- p %>%
-            #filter(ROSTERSTATUS==1) %>%
+            filter(FROM_YEAR == '2024') %>%
             mutate(join.names = tolower(stringr::str_replace_all(DISPLAY_FIRST_LAST,suffix.rep))) %>%
             select(join.names, PERSON_ID)
 
 
-wehoopId <- dbGetQuery(conn, "SELECT DISTINCT athlete_id, athlete_display_name, athlete_position_abbreviation FROM playerbox")
+#wehoopId <- dbGetQuery(conn, "SELECT DISTINCT athlete_id, athlete_display_name, athlete_position_abbreviation FROM playerbox")
+wehoopId <- wehoop::load_wbb_player_box(most_recent_wnba_season())
 
 currentWhoopR <- wehoopId %>%
                     select(athlete_display_name, athlete_id, athlete_position_abbreviation) %>%
                     mutate(join.names = tolower(stringr::str_replace_all(athlete_display_name,suffix.rep))) %>%
                     distinct(athlete_id, .keep_all= TRUE)
 
-datadump <- left_join(currentWhoopR, currentWNBA, by="join.names")
+#datadump <- left_join(currentWhoopR, currentWNBA, by="join.names")
+datadump <- left_join(currentWNBA, currentWhoopR, by="join.names")
 datadump <- datadump %>% 
                 mutate(
                     wehoopId = as.integer(athlete_id),
@@ -78,9 +80,9 @@ actnetId <- dbGetQuery(conn, "SELECT DISTINCT * FROM actnetplayers") %>%
                        actnetAbbr=abbr,
                        actnetPlayerId=playerId)
 
-datadump <- left_join(datadump, actnetId, by="joinName")
+dd <- left_join(datadump, actnetId,  by="joinName")
 
-dbWriteTable(conn, name = "players", value= datadump, row.names = FALSE, append=TRUE)#overwrite=TRUE)
+dbWriteTable(conn, name = "players", value= dd, row.names = FALSE, append=TRUE)#overwrite=TRUE)
 
 
 

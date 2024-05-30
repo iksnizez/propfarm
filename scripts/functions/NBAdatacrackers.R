@@ -1230,10 +1230,10 @@ distance.traveled <- function(distanceMatrix){
 ##################
 # scraper basketball reference to get players positional percent estimates
 ##################
-players.played.position.estimate <- function(season){
+players.played.position.estimate <- function(season, pull.date){
   ## season should be four digit numerical
   ## db process loads into my custom db, it applies the hoopr player ids to the bref player names
-  today <- Sys.Date()
+  today <- pull.date
   
   # https://www.basketball-reference.com/teams/PHI/2024.html#pbp
   basketball.reference.team.abbr <- c('GSW','DEN','POR','SAC','TOR','DAL','PHO','CHI',
@@ -1270,6 +1270,7 @@ players.played.position.estimate <- function(season){
       html_node("#pbp") %>% 
       html_table(trim = TRUE)
     
+    Sys.sleep(2)
     # correcting headers
     colnames(team.pos.estimates) <- c('rk', 'player', 'age', 'gp', 'mp', 'PG', 'SG', 'SF',
                                       'PF', 'C', 'onCourtPlusMinusPer100', 'onOffPlusMinusPer100',
@@ -1314,6 +1315,7 @@ players.played.position.estimate <- function(season){
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Kira Lewis Jr.' & team == 'NOP'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Pascal Siakam' & team == 'TOR'))
     #trade
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Danilo Gallinari' & team == 'DET'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Danilo Gallinari' & team == 'WAS'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Mike Muscala' & team == 'WAS'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Isaiah Livers' & team == 'DET'))
@@ -1325,15 +1327,16 @@ players.played.position.estimate <- function(season){
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Simone Fontecchio' & team == 'UTA'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Kevin Knox' & team == 'DET'))
     # trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Xavier Tillman' & team == 'MEM'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Xavier Tillman Sr.' & team == 'MEM'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Bismack Biyombo' & team == 'MEM'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Lamar Stevens' & team == 'BOS'))
     #trade
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Shake Milton' & team == 'MIN'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Troy Brown Jr.' & team == 'MIN'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Monte Morris' & team == 'DET'))
     #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Alex Burks' & team == 'DET'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Bojan Bogdanovic' & team == 'DET'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Alec Burks' & team == 'DET'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Bojan Bogdanović' & team == 'DET'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Quentin Grimes' & team == 'NYK'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Malachi Flynn' & team == 'NYK'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Evan Fournier' & team == 'NYK'))
@@ -1341,7 +1344,7 @@ players.played.position.estimate <- function(season){
     #trade
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Spencer Dinwiddie' & team == 'BRK'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Thaddeus Young' & team == 'TOR'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Dennis Schroder' & team == 'TOR'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Dennis Schröder' & team == 'TOR'))
     #trade
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Danuel House Jr.' & team == 'PHI'))
     #trade
@@ -1389,6 +1392,30 @@ players.played.position.estimate <- function(season){
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Killian Hayes' & team == 'DET'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Harry Giles' & team == 'DET'))
     team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Jaden Springer' & team == 'PHI'))
+    #cleanups
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Trey Jemison' & team == 'MEM'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Tosan Evbuomwan' & team == 'MEM'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Théo Maledon' & team == 'CHO'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Delon Wright' & team == 'WAS'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Marques Bolden' & team == 'MIL'))
+    
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Harry Giles' & team == 'BRK'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Mike Muscala' & team == 'DET'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Aleksej Pokusevski' & team == 'OKC'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Shake Milton' & team == 'DET'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Patty Mills' & team == 'ATL'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Ish Wainright' & team == 'POR'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Dylan Windler' & team == 'LAL'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Taj Gibson' & team == 'NYK'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Jacob Gilyard' & team == 'MEM'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Mamadi Diakite' & team == 'SAS'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Jaylen Nowell' & team == 'MEM'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Darius Bazley' & team == 'PHI'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Kenneth Lofton Jr.' & team == 'PHI'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Ryan Rollins' & team == 'WAS'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Jamaree Bouyea' & team == 'POR'))
+    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Alex Fudge' & team == 'LAL'))
+    
     
     team.pos.estimates <- team.pos.estimates  %>% unique()
     
@@ -1852,3 +1879,179 @@ wnbaPropfarming <- function(box.score.data, team.ids, matchups.today, minFilter=
   
   return(df)    
 }
+######
+
+####################
+# process harvest into easy to read output
+####################
+process.harvest.wnba <- function(harvest){
+  
+  p <- harvest %>% 
+    # filter((((ptsOscore > -1) & (line_pts > 3)) | (ptsOscore > 0)) | (((ptsUscore > -1) & (line_pts > 1)) | (ptsUscore > 0))) %>%
+    select(player, pos, team, opp, ptsOscore, ptsUscore, 
+           ptsSynth, line_pts, btb, btbOpp, 
+           ptsRank, rebRank, astRank, fg3mRank, stlRank, blkRank, fgPctRank, fg2PctRank, fg3PctRank,
+           minAvg, minAvgL3, minAvgL10, ptsAvg, ptsAvgL3, ptsAvgL10,  game_id) %>%
+    arrange(desc(ptsOscore))
+  #View(p)
+  colnames(p) <- c("player", "pos", "team", "opp", "Oscore", "Uscore", "Synth", "line", "btb", "btbOpp", 
+                   "oppPtsRank", "oppRebRank", "oppAstRank", "oppFg3mRank", "oppStlRank", "oppBlkRank", "oppFgPctRank", "oppFg2PctRank", "oppFg3PctRank",
+                   "minAvg", "minAvgL3", "minAvgL10", "Avg", "AvgL3", "AvgL10", "game_id" )
+  p$prop = 'pts'
+  
+  r <- harvest %>% 
+    #filter( (((rebOscore > -1) & (line_reb > 3)) | (rebOscore > 0)) | (((rebUscore > -1) & (line_reb > 1)) | (rebUscore > 0))) %>%
+    select(player, pos, team, opp, #overUnder, spread,
+           rebOscore, rebUscore,rebSynth, line_reb, btb, btbOpp, 
+           ptsRank, rebRank, astRank, fg3mRank, stlRank, blkRank,fgPctRank, fg2PctRank, fg3PctRank,
+           minAvg, minAvgL3, minAvgL10,  rebAvg, rebAvgL3, rebAvgL10,  game_id) %>%
+    arrange(desc(rebOscore))
+  #View(r)
+  colnames(r) <- c("player", "pos", "team", "opp", "Oscore", "Uscore", "Synth", "line", "btb", "btbOpp", 
+                   "oppPtsRank", "oppRebRank", "oppAstRank", "oppFg3mRank", "oppStlRank", "oppBlkRank", "oppFgPctRank", "oppFg2PctRank", "oppFg3PctRank",
+                   "minAvg", "minAvgL3", "minAvgL10", "Avg", "AvgL3", "AvgL10", "game_id" )
+  r$prop = 'reb'
+  
+  a <- harvest %>% 
+    # filter( (((astOscore > -1) & (line_ast > 3)) | (astOscore > 0)) | (((astUscore > -1) & (line_ast > 1)) | (astUscore > 0))) %>%
+    select(player, pos, team, opp, #overUnder, spread,
+           astOscore, astUscore, 
+           astSynth, line_ast, btb, btbOpp, 
+           ptsRank, rebRank, astRank, fg3mRank, stlRank, blkRank,fgPctRank, fg2PctRank, fg3PctRank,
+           minAvg, minAvgL3, minAvgL10,  astAvg, astAvgL3, astAvgL10,  game_id) %>%
+    arrange(desc(astOscore))
+  #View(a)
+  colnames(a) <- c("player", "pos", "team", "opp", "Oscore", "Uscore", "Synth", "line", "btb", "btbOpp", 
+                   "oppPtsRank", "oppRebRank", "oppAstRank", "oppFg3mRank", "oppStlRank", "oppBlkRank", "oppFgPctRank", "oppFg2PctRank", "oppFg3PctRank",
+                   "minAvg", "minAvgL3", "minAvgL10", "Avg", "AvgL3", "AvgL10", "game_id" )
+  a$prop = 'ast'
+  
+  tre <- harvest %>% 
+    #filter( (((fg3mOscore > -1) & (line_threes > 1)) | (fg3mOscore > 0.25)) | (((fg3mUscore > -1) & (line_threes > 1)) | (fg3mUscore > 0.25))) %>%
+    select(player, pos, team, opp, # overUnder, spread,
+           fg3mOscore, fg3mUscore, fg3mSynth, line_threes,
+           btb, btbOpp, 
+           ptsRank, rebRank, astRank, fg3mRank, stlRank, blkRank,fgPctRank, fg2PctRank, fg3PctRank,
+           minAvg, minAvgL3, minAvgL10, fg3mAvg, fg3mAvgL3, fg3mAvgL10,  game_id ) %>%
+    arrange(desc(fg3mOscore))
+  #View(tre)
+  colnames(tre) <- c("player", "pos", "team", "opp", "Oscore", "Uscore", "Synth", "line", "btb", "btbOpp", 
+                     "oppPtsRank", "oppRebRank", "oppAstRank", "oppFg3mRank", "oppStlRank", "oppBlkRank", "oppFgPctRank", "oppFg2PctRank", "oppFg3PctRank",
+                     "minAvg", "minAvgL3", "minAvgL10", "Avg", "AvgL3", "AvgL10", "game_id" )
+  tre$prop = 'fg3m'
+  
+  pra <- harvest %>% 
+    # filter( (((praOscore > -1) & (line_pra > 3)) | (praOscore > 0)) | (((praUscore > -1) & (line_pra > 1)) | (praUscore > 0))) %>%
+    select(player, pos, team,  opp, #overUnder, spread,
+           praOscore, praUscore,praSynth, line_pra, 
+           btb, btbOpp, 
+           ptsRank, rebRank, astRank, fg3mRank, stlRank, blkRank,fgPctRank, fg2PctRank, fg3PctRank,
+           minAvg, minAvgL3, minAvgL10, praAvg, praAvgL3, praAvgL10, game_id) %>%
+    arrange(desc(praOscore))
+  #View(pra)
+  colnames(pra) <- c("player", "pos", "team", "opp", "Oscore", "Uscore", "Synth", "line", "btb", "btbOpp", 
+                     "oppPtsRank", "oppRebRank", "oppAstRank", "oppFg3mRank", "oppStlRank", "oppBlkRank", "oppFgPctRank", "oppFg2PctRank", "oppFg3PctRank",
+                     "minAvg", "minAvgL3", "minAvgL10", "Avg", "AvgL3", "AvgL10", "game_id" )
+  pra$prop = 'pra'
+  
+  pr <- harvest %>%
+    #filter( (((prOscore > -1) & (line_pr > 3)) | (prOscore > 0)) | (((prUscore > -1) & (line_pr > 1)) | (prUscore > 0)) ) %>%
+    select(player, pos, team, opp, #overUnder, spread,
+           prOscore, prUscore, prSynth, line_pr,
+           btb, btbOpp,
+           ptsRank, rebRank, astRank, fg3mRank, stlRank, blkRank,fgPctRank, fg2PctRank, fg3PctRank,
+           minAvg, minAvgL3, minAvgL10,  prAvg, prAvgL3, prAvgL10, game_id ) %>%
+    arrange(desc(prOscore))
+  #View(pr)
+  colnames(pr) <- c("player", "pos", "team", "opp", "Oscore", "Uscore", "Synth", "line", "btb", "btbOpp",
+                    "oppPtsRank", "oppRebRank", "oppAstRank", "oppFg3mRank", "oppStlRank", "oppBlkRank", "oppFgPctRank", "oppFg2PctRank", "oppFg3PctRank",
+                    "minAvg", "minAvgL3", "minAvgL10", "Avg", "AvgL3", "AvgL10", "game_id" )
+  pr$prop = 'pr'
+
+  pa <- harvest %>%
+    # filter( (((paOscore > -1) & (line_pa > 3)) | (paOscore > 0)) | (((paUscore > -1) & (line_pa > 1)) | (paUscore > 0))) %>%
+    select(player, pos, team, opp, #overUnder, spread,
+           paOscore, paUscore, paSynth, line_pa, btb, btbOpp,
+           ptsRank, rebRank, astRank, fg3mRank, stlRank, blkRank,fgPctRank, fg2PctRank, fg3PctRank,
+           minAvg, minAvgL3, minAvgL10,  paAvg, paAvgL3, paAvgL10,game_id) %>%
+    arrange(desc(paOscore))
+  #View(pa)
+  colnames(pa) <- c("player", "pos", "team", "opp", "Oscore", "Uscore", "Synth", "line", "btb", "btbOpp",
+                    "oppPtsRank", "oppRebRank", "oppAstRank", "oppFg3mRank", "oppStlRank", "oppBlkRank", "oppFgPctRank", "oppFg2PctRank", "oppFg3PctRank",
+                    "minAvg", "minAvgL3", "minAvgL10", "Avg", "AvgL3", "AvgL10", "game_id" )
+  pa$prop = 'pa'
+
+  ra <- harvest %>%
+    #filter( (((raOscore > -1) & (line_ra > 3)) | (raOscore > 0)) | (((raUscore > -1) & (line_ra > 1)) | (raUscore > 0)) ) %>%
+    select(player, pos, team, opp, #overUnder, spread,
+           raOscore, raUscore, raSynth, line_ra,btb, btbOpp,
+           ptsRank, rebRank, astRank, fg3mRank, stlRank, blkRank,fgPctRank, fg2PctRank, fg3PctRank,
+           minAvg, minAvgL3, minAvgL10,  raAvg, raAvgL3, raAvgL10, game_id
+    ) %>%
+    arrange(desc(raOscore))
+  #View(ra)
+  colnames(ra) <- c("player", "pos", "team", "opp", "Oscore", "Uscore", "Synth", "line", "btb", "btbOpp",
+                    "oppPtsRank", "oppRebRank", "oppAstRank", "oppFg3mRank", "oppStlRank", "oppBlkRank", "oppFgPctRank", "oppFg2PctRank", "oppFg3PctRank",
+                    "minAvg", "minAvgL3", "minAvgL10", "Avg", "AvgL3", "AvgL10", "game_id" )
+  ra$prop = 'ra'
+  
+  # stls <- harvest %>% 
+  #   #filter((stlOscore > 0.25) | (stlUscore > 0.25)) %>%
+  #   select(player, pos, team, opp, #overUnder, spread,
+  #          stlOscore, stlUscore, stlSynth, line_stl, 
+  #          btb, btbOpp, 
+  #          ptsRank, rebRank, astRank, fg3mRank, stlRank, blkRank,fgPctRank, fg2PctRank, fg3PctRank,
+  #          minAvg, minAvgL3, minAvgL10,  stlAvg, stlAvgL3, stlAvgL10,  game_id) %>%
+  #   arrange(desc(stlOscore))
+  # #View(stls)
+  # colnames(stls) <- c("player", "pos", "team", "opp", "Oscore", "Uscore", "Synth", "line", "btb", "btbOpp", 
+  #                     "oppPtsRank", "oppRebRank", "oppAstRank", "oppFg3mRank", "oppStlRank", "oppBlkRank", "oppFgPctRank", "oppFg2PctRank", "oppFg3PctRank",
+  #                     "minAvg", "minAvgL3", "minAvgL10", "Avg", "AvgL3", "AvgL10", "game_id" )
+  # stls$prop = 'stl'
+  # 
+  # b <- harvest %>% 
+  #   #filter((blkOscore > 0.25) | (blkUscore > 0.25)) %>%
+  #   select(player, pos, team, opp, #overUnder, spread,
+  #          blkOscore, blkUscore, blkSynth, line_blk, 
+  #          btb, btbOpp, 
+  #          ptsRank, rebRank, astRank, fg3mRank, stlRank, blkRank,fgPctRank, fg2PctRank, fg3PctRank,
+  #          minAvg, minAvgL3, minAvgL10,  blkAvg, blkAvgL3, blkAvgL10, game_id ) %>%
+  #   arrange(desc(blkOscore))
+  # #View(b)
+  # colnames(b) <- c("player", "pos", "team", "opp", "Oscore", "Uscore", "Synth", "line", "btb", "btbOpp", 
+  #                  "oppPtsRank", "oppRebRank", "oppAstRank", "oppFg3mRank", "oppStlRank", "oppBlkRank", "oppFgPctRank", "oppFg2PctRank", "oppFg3PctRank",
+  #                  "minAvg", "minAvgL3", "minAvgL10", "Avg", "AvgL3", "AvgL10", "game_id" )
+  # b$prop = 'blk'
+  # 
+  # stocks <- harvest %>% 
+  #   #filter( (sbOscore > 0.25) |  (sbUscore > 0.25)) %>%
+  #   select(player, pos, team, opp,# overUnder, spread,
+  #          sbOscore, sbUscore, sbSynth, line_sb, btb, btbOpp, 
+  #          ptsRank, rebRank, astRank, fg3mRank, stlRank, blkRank,fgPctRank, fg2PctRank, fg3PctRank,
+  #          minAvg, minAvgL3, minAvgL10,  sbAvg, sbAvgL3, sbAvgL10, game_id 
+  #   ) %>%
+  #   arrange(desc(sbOscore))
+  # #View(stocks)
+  # colnames(stocks) <- c("player", "pos", "team", "opp", "Oscore", "Uscore", "Synth", "line", "btb", "btbOpp", 
+  #                       "oppPtsRank", "oppRebRank", "oppAstRank", "oppFg3mRank", "oppStlRank", "oppBlkRank", "oppFgPctRank", "oppFg2PctRank", "oppFg3PctRank",
+  #                       "minAvg", "minAvgL3", "minAvgL10", "Avg", "AvgL3", "AvgL10", "game_id" )
+  # stocks$prop = 'sb'
+  
+  scores <- rbind(p, r)
+  scores <- rbind(scores, a)
+  scores <- rbind(scores, tre)
+  scores <- rbind(scores, pra)
+  scores <- rbind(scores, pr)
+  scores <- rbind(scores, pa)
+  scores <- rbind(scores, ra) %>%
+  # scores <- rbind(scores, stls)
+  # scores <- rbind(scores, b)
+  # scores <- rbind(scores, stocks) %>% 
+    select(player, pos, team, opp, prop, line, Oscore, Uscore, Synth, btb, btbOpp, oppPtsRank, oppRebRank,
+           oppAstRank, oppFg3mRank, oppStlRank, oppBlkRank, oppFgPctRank, oppFg2PctRank, oppFg3PctRank,
+           minAvg, minAvgL3, minAvgL10, Avg, AvgL3, AvgL10, game_id) %>% 
+    arrange(desc(Oscore))
+  
+  return(scores)
+}
+####################

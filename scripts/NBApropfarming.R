@@ -48,9 +48,9 @@ suffix.rep <- c("\\."="", "`"="", "'"="",
 #############
 # retrieve most recent basketball-reference player position estimate - using the players highest % as their POS assignment
 #############
-######################### >>>>>>>>>>>>>FUNCTION IN DATACRACKERS NEEDS TO BE UPDATED FOR PLAYERS MOVING, FILTER OUT OLD TEAMS
+### >>>>>>>>>>>>>FUNCTION IN DATACRACKERS NEEDS TO BE UPDATED FOR PLAYERS MOVING, FILTER OUT OLD TEAMS
 # use custom function to retrieve basketball-reference position estimates
-bref.pos.estimates <- players.played.position.estimate(season= s)
+bref.pos.estimates <- players.played.position.estimate(season= s, pull.date = search.date)
 
 # add to playerIds and append to db
 conn <- harvestDBconnect(league = league)
@@ -75,6 +75,11 @@ dbWriteTable(conn, name = "brefmisc", value= bref.pos.estimates,
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 
+# checks for players that have changed teams and need their old team deleted in the current date, also need to adjust datacracker to ignore old team
+if(nrow(bref.pos.estimates[duplicated(bref.pos.estimates$player)|duplicated(bref.pos.estimates$player, fromLast = TRUE),]) > 0){
+    View(bref.pos.estimates[duplicated(bref.pos.estimates$player)|duplicated(bref.pos.estimates$player, fromLast = TRUE),])
+}
+#####
 
 ################# load from db if already pulled on date ################################################
 conn <- harvestDBconnect(league = league)
@@ -92,7 +97,7 @@ bref.pos.estimates <- bref.pos.estimates %>% distinct()
 ########
 # boxscore  will be used to access players that are playing today and agg stats
 boxscore.player <- load_nba_player_box(s) %>% 
-                        filter(game_date < search.date) %>% 
+                        filter(game_date < search.date & team_name != "All-Stars") %>% 
                         distinct()
 boxscore.player %>% select(game_date) %>% filter(row_number()==1) %>% pull()
 
@@ -252,6 +257,8 @@ betting.table <- dbGetQuery(conn, paste0(query, odds.date, "'")) %>%
             team == "GSW" ~ "GS",
             TRUE ~ team
         ))
+#####
+
 ##########
 # ROTO DOESN"T ALLOW THE CSV DOWNLOADS FOR FREE ANYMORE
 ##########
@@ -437,7 +444,7 @@ harvest <- harvest %>%
              pos = athlete_position_abbreviation)
            ) 
 
-scores <- process.harvest(harvest = harvest)
+scores <- process.harvest(harvest = harvest) %>% relocate(c(AvgL3, AvgL10, Synth), .after=line) %>% relocate(Avg, .after=prop)
 View(scores)
 #a <- scores
 #####
@@ -461,6 +468,7 @@ dbWriteTable(conn, name = "props", value= harvest, row.names = FALSE, overwrite 
 #dbx::dbxInsert(conn=conn, table="props", records = harvest)
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
+print(paste("most recent prop scores added ", search.date, sep=' ' ))
 #####
 
 ##################

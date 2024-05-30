@@ -52,9 +52,9 @@ dates.allstar <- schedule %>%
 
 # boxscore  will be used to access players that are playing today and agg stats
 boxscore.player <- load_nba_player_box(s) %>% 
-                        filter(game_date < search.date ) %>%
+                        filter(game_date < search.date & team_name != "All-Stars") %>% 
                         # FILTER OUT ASG
-                        filter(!game_date %in%  dates.allstar) %>%
+                        #filter(!game_date %in%  dates.allstar) %>%
                         left_join(bref.pos.estimates %>% select(hooprId, pos) %>% rename(athlete_id = hooprId), by = c('athlete_id')
                         ) %>% 
                         mutate(athlete_position_abbreviation = case_when(is.na(pos) ~ athlete_position_abbreviation,

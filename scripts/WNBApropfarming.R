@@ -1,3 +1,4 @@
+#remotes::install_github("sportsdataverse/wehoop")
 library(wehoop)
 library(DBI)
 library(dplyr)
@@ -19,8 +20,8 @@ library(zoo)
 ##################
 ### static parameters used throughout the script
 league <- 'wnba'
-season  <-  "2022-23"
-s <-  2023
+season  <-  "2023-24"
+s <-  2024
 n.games <- 3
 date_change <-  0 ##<<<<<<<<<<<<<<<<<<<<<<<< <<<<<<<<<<<<<<<< ######use negative for going back days
 cutoff_date <- Sys.Date() - 12
@@ -28,7 +29,7 @@ search.date <- Sys.Date() + date_change
 
 # boxscore  will be used to access players that are playing today and agg stats
 boxscore.player <- wehoop::load_wnba_player_box(s) %>% 
-                        filter(game_date <= search.date )
+                        filter(game_date < search.date )
 
 # calculating previous game date
 prev.game.dates <- sort(boxscore.player$game_date %>% unique(), decreasing = TRUE)
@@ -191,14 +192,14 @@ harvest <- harvest %>%
         blkUscore = NA, #round(line_BLK - (blkSynth + blkStdL3),3),
         fg3mOscore = round((fg3mSynth - fg3mStdL3) - line_threes,3),
         fg3mUscore = round(line_threes - (fg3mSynth + fg3mStdL3),3),
-        praOscore = NA, #round((praSynth - praStdL3) - line_PTSREBAST,3),
-        praUscore = NA, #round(line_PTSREBAST - (praSynth + praStdL3),3),
-        prOscore = NA, #round((prSynth - prStdL3) - line_PTSREB,3),
-        prUscore = NA, #round(line_PTSREB - (prSynth + prStdL3),3),
-        paOscore = NA, #round((paSynth - paStdL3) - line_PTSAST,3),
-        paUscore = NA, #round(line_PTSAST - (paSynth + paStdL3),3),
-        raOscore = NA, #round((raSynth - raStdL3) - line_REBAST,3),
-        raUscore = NA, #round(line_REBAST - (raSynth + raStdL3),3),
+        praOscore = round((praSynth - praStdL3) - line_pra,3),
+        praUscore = round(line_pra - (praSynth + praStdL3),3),
+        prOscore = round((prSynth - prStdL3) - line_pr,3),
+        prUscore = round(line_pr - (prSynth + prStdL3),3),
+        paOscore = round((paSynth - paStdL3) - line_pa,3),
+        paUscore = round(line_pa - (paSynth + paStdL3),3),
+        raOscore = round((raSynth - raStdL3) - line_ra,3),
+        raUscore = round(line_ra - (raSynth + raStdL3),3),
         sbOscore = NA, #round((sbSynth - sbStdL3) - line_STLBLK,3),
         sbUscore = NA, #round(line_STLBLK - (sbSynth + sbStdL3),3),
         date = as.Date(date, format="%Y-%m-%d"),
@@ -210,7 +211,7 @@ harvest <- harvest %>%
 # retrieving opponent ranks by position for last N games
 ##################
 # calling function to return teams opponent stats
-opp.stats <- opp.stats.last.n.games(season=s,
+opp.stats <- stats.last.n.games.opp(season=s,
                                     num.game.lookback =15, 
                                     box.scores=boxscore.player, 
                                     schedule=schedule)
@@ -237,14 +238,10 @@ harvest <- harvest %>%
 #game.lines.today <- games.betting.info(gids.today)
 #harvest <- harvest %>% left_join(game.lines.today, by="game_id")
 
-crop <- harvest %>%
-    select(player, team, opp, minAvg,
-           ptsAvg, ptsSynth, line_pts, ptsOscore, ptsUscore, 
-           rebAvg, rebSynth, line_reb,rebOscore, rebUscore, 
-           astAvg, astSynth, line_ast, astOscore, astUscore, 
-           fg3mAvg, fg3mSynth, line_threes, fg3mOscore, fg3mUscore) 
+wscores <- process.harvest.wnba(harvest = harvest) %>% relocate(c(AvgL3, AvgL10, Synth), .after=line) %>% relocate(Avg, .after=prop)
 
-crop %>% View()
+View(wscores)
+
 
 # load harvest scores to the db
 conn <- harvestDBconnect(league=league)
@@ -334,10 +331,10 @@ yesterday.harvest <- yesterday.harvest %>%
         win_stl = NA, #ifelse(act_stl > line_stl, "o", "u"),
         win_blk = NA, #ifelse(act_blk > line_blk, "o", "u"),
         win_threes = ifelse(act_threes > line_threes, "o", "u"),
-        win_pra = NA, #ifelse(act_pra > line_pra, "o", "u"),
-        win_pr = NA, #ifelse(act_pr > line_pr, "o", "u"),
-        Win_pa = NA, #ifelse(act_pa > line_pa, "o", "u"),
-        win_ra = NA, #ifelse(act_ra > line_ra, "o", "u"),
+        win_pra = ifelse(act_pra > line_pra, "o", "u"),
+        win_pr = ifelse(act_pr > line_pr, "o", "u"),
+        Win_pa = ifelse(act_pa > line_pa, "o", "u"),
+        win_ra = ifelse(act_ra > line_ra, "o", "u"),
         win_sb = NA #ifelse(act_sb > line_sb, "o", "u")
     )
 

@@ -3,31 +3,59 @@ library(DBI)
 library(RMySQL)
 library(jsonlite)
 library(dplyr)
+library(dbx)
 library(stringr)
 source("scripts/functions/dbhelpers.R")
 
 season <- "2023-24"
+s <- 2024
 league <- 'nba'
 
+################
+# update database - manually checks existing db for latest date and loads everything after it
+################
+## PBP ##
+## quit working 
+#update_nba_db(dbname="nba", tblname = "pbp", force_rebuild = c(2024), db_connection=conn)
 conn <- harvestDBconnect(league = league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
-################
-# update database
-################
-#update pbp
-update_nba_db(dbname="nba", 
-              tblname = "pbp", 
-              force_rebuild = c(2024:2024), #TRUE, 
-              db_connection=conn)
+# get last date in db and filter season boxes
+last.date.query <- paste("SELECT MAX(game_date) FROM pbp WHERE season = ", s, ";", sep="")
+last.date <- dbGetQuery(conn, last.date.query)[[1]]
+print(paste("last loaded date = ", last.date))
+
+df <- hoopR::load_nba_pbp(most_recent_nba_season()) %>% 
+    filter(game_date > last.date)
+print(paste("loading dates: ", df$game_date %>% unique()))
+
+DBI::dbWriteTable(conn, name = "pbp", value= data.frame(df), row.names = FALSE, overwrite = FALSE, append = TRUE)
+
+dbSendQuery(conn, "SET GLOBAL local_infile = false;")
+dbDisconnect(conn)
+
+## PLAYER BOXSCORES ##
+## quit working
+#load_nba_player_box(seasons = c(2024), dbConnection = conn,tablename = 'playerbox',)
+
+#manually append missing games
+conn <- harvestDBconnect(league = league)
+dbSendQuery(conn, "SET GLOBAL local_infile = true;")
+
+# get last date in db and filter season boxes
+last.date.query <- paste("SELECT MAX(game_date) FROM playerbox WHERE season = ", s, ";", sep="")
+last.date <- dbGetQuery(conn, last.date.query)[[1]]
+print(paste("last loaded date = ", last.date))
+
+df <- hoopR::load_nba_player_box(s) %>% 
+        filter(game_date > last.date)
+print(paste("loading dates: ", df$game_date %>% unique()))
 
 
-load_nba_player_box(
-    seasons = c(2024),
-    dbConnection = conn,
-    tablename = 'playerbox',
-    
-)
+DBI::dbWriteTable(conn, name = "playerbox", value= data.frame(df), row.names = FALSE, overwrite = FALSE, append = TRUE)
+
+dbSendQuery(conn, "SET GLOBAL local_infile = false;")
+dbDisconnect(conn)
 
 ######
 
