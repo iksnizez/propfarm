@@ -23,13 +23,14 @@ league <- 'wnba'
 season  <-  "2023-24"
 s <-  2024
 n.games <- 3
-date_change <-  0 ##<<<<<<<<<<<<<<<<<<<<<<<< <<<<<<<<<<<<<<<< ######use negative for going back days
+date_change <- 0  ##<<<<<<<<<<<<<<<<<<<<<<<< <<<<<<<<<<<<<<<< ######use negative for going back days
 cutoff_date <- Sys.Date() - 12
 search.date <- Sys.Date() + date_change
 
 # boxscore  will be used to access players that are playing today and agg stats
 boxscore.player <- wehoop::load_wnba_player_box(s) %>% 
-                        filter(game_date < search.date )
+                        filter(game_date < search.date,
+                               team_id < 90) 
 
 # calculating previous game date
 prev.game.dates <- sort(boxscore.player$game_date %>% unique(), decreasing = TRUE)
