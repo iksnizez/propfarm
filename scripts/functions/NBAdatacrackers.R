@@ -35,6 +35,28 @@ update.default.team.data <- function(){
 #####
 
 ####################
+## MAP TO CLEAN NAMES FOR BETTER JOINING
+####################
+suffix.rep <- c("\\."="", "`"="", "'"="",
+                " III$"="", " IV$"="", " II$"="", " iii$"="", " ii$"="", " iv$"="", " v$"="", " V$"="",
+                " jr$"="", " sr$"="", " jr.$"="", " sr.$"="", " Jr$"="", " Sr$"="", " Jr.$"="", " Sr.$"="", 
+                " JR$"="", " SR$"="", " JR.$"="", " SR.$"="",
+                "š"="s","ş"="s", "š"="s", 'š'="s", "š"="s",
+                "ž"="z",
+                "þ"="p","ģ"="g",
+                "à"="a","á"="a","â"="a","ã"="a","ä"="a","å"="a",'ā'="a",
+                "ç"="c",'ć'="c", 'č'="c",
+                "è"="e","é"="e","ê"="e","ë"="e",'é'="e",
+                "ì"="i","í"="i","î"="i","ï"="i", "İ"="I",	
+                "ð"="o","ò"="o","ó"="o","ô"="o","õ"="o","ö"="o",'ö'="o",
+                "ù"="u","ú"="u","û"="u","ü"="u","ū"="u",
+                "ñ"="n","ņ"="n",
+                "ý"="y",
+                "Dario .*"="dario saric", "Alperen .*"="alperen sengun", "Luka.*amanic"="luka samanic"
+)
+#####
+
+####################
 ## FUNCTIONS FOR USE WITH PBP DATA
 ####################
 ###
@@ -464,7 +486,6 @@ split.sum.box.scores <- function(box.scores, gids, opp=TRUE, t= NULL, min = 0, t
 
     return(split.summed)
 }
-
 #####
 
 ####################
@@ -660,7 +681,6 @@ stats.last.n.games.opp  <- function(season, num.game.lookback=15, box.scores=NUL
     
     return(output)
 }
-
 #####
 
 ####################
@@ -854,7 +874,6 @@ stats.last.n.games.offense  <- function(season, num.game.lookback=15, box.scores
   
   return(output)
 }
-
 #####
 
 ####################
@@ -1291,130 +1310,8 @@ players.played.position.estimate <- function(season, pull.date){
     
     # filter out traded players that aren't udpated in the site
     #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Nicolas Batum' & team == 'LAC'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'P.J. Tucker' & team == 'PHI'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Robert Covington' & team == 'LAC'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'KJ Martin' & team == 'LAC'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Filip Petrušev' & team == 'PHI'))
-    # acquistion
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Daniel Theis' & team == 'IND'))
-    #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'OG Anunoby' & team == 'TOR'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Precious Achiuwa' & team == 'TOR'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Malachi Flynn' & team == 'TOR'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'RJ Barrett' & team == 'NYK'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Immanuel Quickley' & team == 'NYK'))
-    #acquisition
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Kenneth Lofton Jr.' & team == 'MEM'))
-    #acquisition
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Dylan Windler' & team == 'NYK'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Skylar Mays' & team == 'POR'))
-    #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Bruce Brown' & team == 'IND'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Jordan Nwora' & team == 'IND'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Kira Lewis Jr.' & team == 'NOP'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Pascal Siakam' & team == 'TOR'))
-    #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Danilo Gallinari' & team == 'DET'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Danilo Gallinari' & team == 'WAS'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Mike Muscala' & team == 'WAS'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Isaiah Livers' & team == 'DET'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Marvin Bagley III' & team == 'DET'))
-    # trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Kyle Lowry' & team == 'MIA'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Terry Rozier' & team == 'CHO'))
-    # trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Simone Fontecchio' & team == 'UTA'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Kevin Knox' & team == 'DET'))
-    # trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Xavier Tillman Sr.' & team == 'MEM'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Bismack Biyombo' & team == 'MEM'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Lamar Stevens' & team == 'BOS'))
-    #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Shake Milton' & team == 'MIN'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Troy Brown Jr.' & team == 'MIN'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Monte Morris' & team == 'DET'))
-    #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Alec Burks' & team == 'DET'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Bojan Bogdanović' & team == 'DET'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Quentin Grimes' & team == 'NYK'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Malachi Flynn' & team == 'NYK'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Evan Fournier' & team == 'NYK'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Ryan Arcidiacono' & team == 'NYK'))
-    #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Spencer Dinwiddie' & team == 'BRK'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Thaddeus Young' & team == 'TOR'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Dennis Schröder' & team == 'TOR'))
-    #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Danuel House Jr.' & team == 'PHI'))
-    #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Kelly Olynyk' & team == 'UTA'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Ochai Agbaji' & team == 'UTA'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Otto Porter Jr.' & team == 'TOR'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Kira Lewis Jr.' & team == 'TOR'))
-    #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Marcus Morris' & team == 'IND'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Doug McDermott' & team == 'SAS'))
-    #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Yuta Watanabe' & team == 'PHO'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Keita Bates-Diop' & team == 'PHO'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Jordan Goodwin' & team == 'PHO'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Chimezie Metu' & team == 'PHO'))
-    #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Robin Lopez' & team == 'MIL'))
-    #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Patrick Beverley' & team == 'PHI'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Cameron Payne' & team == 'MIL'))
-    #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Richaun Holmes' & team == 'DAL'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Grant Williams' & team == 'DAL'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Seth Curry' & team == 'DAL'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Daniel Gafford' & team == 'WAS'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'P.J. Washington' & team == 'CHO'))
-    #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Gordon Hayward' & team == 'CHO'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Vasilije Micić' & team == 'OKC'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Dāvis Bertāns' & team == 'OKC'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Tre Mann' & team == 'OKC'))
-    #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'David Roddy' & team == 'MEM'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == "Royce O'Neale" & team == 'BRK'))
-    #trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Buddy Hield' & team == 'IND'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Marcus Morris' & team == 'PHI'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Furkan Korkmaz' & team == 'PHI'))
-    # trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Cory Joseph' & team == 'GSW'))
-    # trade
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Dalano Banton' & team == 'BOS'))
-    #waived
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Joe Harris' & team == 'DET'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Killian Hayes' & team == 'DET'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Harry Giles' & team == 'DET'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Jaden Springer' & team == 'PHI'))
-    #cleanups
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Trey Jemison' & team == 'MEM'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Tosan Evbuomwan' & team == 'MEM'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Théo Maledon' & team == 'CHO'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Delon Wright' & team == 'WAS'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Marques Bolden' & team == 'MIL'))
-    
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Harry Giles' & team == 'BRK'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Mike Muscala' & team == 'DET'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Aleksej Pokusevski' & team == 'OKC'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Shake Milton' & team == 'DET'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Patty Mills' & team == 'ATL'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Ish Wainright' & team == 'POR'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Dylan Windler' & team == 'LAL'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Taj Gibson' & team == 'NYK'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Jacob Gilyard' & team == 'MEM'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Mamadi Diakite' & team == 'SAS'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Jaylen Nowell' & team == 'MEM'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Darius Bazley' & team == 'PHI'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Kenneth Lofton Jr.' & team == 'PHI'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Ryan Rollins' & team == 'WAS'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Jamaree Bouyea' & team == 'POR'))
-    team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Alex Fudge' & team == 'LAL'))
+    #team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Nicolas Batum' & team == 'LAC'))
+
     
     
     team.pos.estimates <- team.pos.estimates  %>% unique()
@@ -1429,23 +1326,6 @@ players.played.position.estimate <- function(season, pull.date){
   
   #roto doesn't have suffixes but everything else does. UGH!
   # creating name column without suffixes to join with betting data until ID list is compiled
-  suffix.rep <- c("\\."="", "`"="", "'"="",
-                  " III$"="", " IV$"="", " II$"="", " iii$"="", " ii$"="", " iv$"="",
-                  " jr$"="", " sr$"="", " jr.$"="", " sr.$"="", " Jr$"="", " Sr$"="", " Jr.$"="", " Sr.$"="",
-                  "š"="s","ş"="s", "š"="s", 'š'="s", "š"="s",
-                  "ž"="z",
-                  "þ"="p","ģ"="g",
-                  "à"="a","á"="a","â"="a","ã"="a","ä"="a","å"="a",'ā'="a",
-                  "ç"="c",'ć'="c", 'č'="c",
-                  "è"="e","é"="e","ê"="e","ë"="e",'é'="e",
-                  "ì"="i","í"="i","î"="i","ï"="i",
-                  "ð"="o","ò"="o","ó"="o","ô"="o","õ"="o","ö"="o",'ö'="o",
-                  "ù"="u","ú"="u","û"="u","ü"="u","ū"="u",
-                  "ñ"="n","ņ"="n",
-                  "ý"="y",
-                  "Dario .*"="dario saric", "Alperen .*"="alperen sengun", "Luka.*amanic"="luka samanic"
-  )
-  
   # add actnetid to roto
   bref.pos.estimates <- bref.pos.estimates %>% 
     mutate(

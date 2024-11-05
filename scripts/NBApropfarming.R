@@ -19,30 +19,14 @@ source("scripts/functions/dbhelpers.R")
 ##################
 ### static parameters used throughout the script
 league <- 'nba'
-season  <-  "2023-24"
-s <-  2024
+season  <-  "2024-25"
+s <-  2025
 n.games <- 3
 last.n.games.rank <- 10 ##<<<<<<<<<<<<<< <<<<<<<<<<<<<<<<<< # used to calc the last n games stats teams have surrended to pos.
 date_change <- 0 ##<<<<<<<<<<<<<<<<<<<<<<<< <<<<<<<<<<<<<<<< ######use negative for going back days
 cutoff_date <- Sys.Date() - 12
 search.date <- Sys.Date() + date_change
 
-suffix.rep <- c("\\."="", "`"="", "'"="",
-                " III$"="", " IV$"="", " II$"="", " iii$"="", " ii$"="", " iv$"="",
-                " jr$"="", " sr$"="", " jr.$"="", " sr.$"="", " Jr$"="", " Sr$"="", " Jr.$"="", " Sr.$"="",
-                "š"="s","ş"="s", "š"="s", 'š'="s", "š"="s",
-                "ž"="z",
-                "þ"="p","ģ"="g",
-                "à"="a","á"="a","â"="a","ã"="a","ä"="a","å"="a",'ā'="a",
-                "ç"="c",'ć'="c", 'č'="c",
-                "è"="e","é"="e","ê"="e","ë"="e",'é'="e",
-                "ì"="i","í"="i","î"="i","ï"="i",
-                "ð"="o","ò"="o","ó"="o","ô"="o","õ"="o","ö"="o",'ö'="o",
-                "ù"="u","ú"="u","û"="u","ü"="u","ū"="u",
-                "ñ"="n","ņ"="n",
-                "ý"="y",
-                "Dario .*"="dario saric", "Alperen .*"="alperen sengun", "Luka.*amanic"="luka samanic"
-)
 ###########################
 
 #############
@@ -76,9 +60,9 @@ dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 
 # checks for players that have changed teams and need their old team deleted in the current date, also need to adjust datacracker to ignore old team
-if(nrow(bref.pos.estimates[duplicated(bref.pos.estimates$player)|duplicated(bref.pos.estimates$player, fromLast = TRUE),]) > 0){
-    View(bref.pos.estimates[duplicated(bref.pos.estimates$player)|duplicated(bref.pos.estimates$player, fromLast = TRUE),])
-}
+#if(nrow(bref.pos.estimates[duplicated(bref.pos.estimates$player)|duplicated(bref.pos.estimates$player, fromLast = TRUE),]) > 0){
+#    View(bref.pos.estimates[duplicated(bref.pos.estimates$player)|duplicated(bref.pos.estimates$player, fromLast = TRUE),])
+#}
 #####
 
 ################# load from db if already pulled on date ################################################
@@ -93,8 +77,9 @@ dbDisconnect(conn)
 
 bref.pos.estimates <- bref.pos.estimates %>% distinct()
 #return duplicated rows after players move teams
-#View(bref.pos.estimates[duplicated(bref.pos.estimates$player)|duplicated(bref.pos.estimates$player, fromLast = TRUE),])
+View(bref.pos.estimates[duplicated(bref.pos.estimates$player)|duplicated(bref.pos.estimates$player, fromLast = TRUE),])
 ########
+
 # boxscore  will be used to access players that are playing today and agg stats
 boxscore.player <- load_nba_player_box(s) %>% 
                         filter(game_date < search.date & team_name != "All-Stars") %>% 
@@ -360,6 +345,7 @@ betting.table <- dbGetQuery(conn, paste0(query, odds.date, "'")) %>%
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 
+#######
 # store the players from the harvest data that did not have any betting info
 missing.players.odds <- setdiff(stat.harvest$join.names, betting.table$PLAYER)
 missing.players.odds

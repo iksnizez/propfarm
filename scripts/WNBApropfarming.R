@@ -54,16 +54,18 @@ next.game.index <- match(search.date, season.game.dates) - 1
 #next game date
 next.game.date <- season.game.dates[next.game.index]
 
+
 today.date.char <- format(search.date, "%Y%m%d")
 yesterday.date.char <- format(prev.game.date, "%Y%m%d")  #using to look for B2Bs
 tomorrow.date.char <- format(next.game.date, "%Y%m%d")   #using to look for B2Bs
-
+ 
 rm(season.game.dates)
 
 ### grab the games playing today, tomorrow and yesterday
 games.today <- espn_wnba_scoreboard (season = today.date.char)
 games.yesterday <- espn_wnba_scoreboard (season = yesterday.date.char)
 games.tomorrow <- espn_wnba_scoreboard (season = tomorrow.date.char)
+
 #####
 
 ### retrieving the player boxscore and schedule for the season, 
