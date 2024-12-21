@@ -34,7 +34,7 @@ search.date <- Sys.Date() + date_change
 #############
 ### >>>>>>>>>>>>>FUNCTION IN DATACRACKERS NEEDS TO BE UPDATED FOR PLAYERS MOVING, FILTER OUT OLD TEAMS
 # use custom function to retrieve basketball-reference position estimates
-bref.pos.estimates <- players.played.position.estimate(season= s, pull.date = search.date)
+bref.pos.estimates <- players.played.position.estimate(s,search.date)
 
 # add to playerIds and append to db
 conn <- harvestDBconnect(league = league)
@@ -76,8 +76,16 @@ dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 
 bref.pos.estimates <- bref.pos.estimates %>% distinct()
+######
+
+bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Scotty Pippen Jr.' & is.na(actnetPlayerId)))
 #return duplicated rows after players move teams
-View(bref.pos.estimates[duplicated(bref.pos.estimates$player)|duplicated(bref.pos.estimates$player, fromLast = TRUE),])
+bref_pos_manual_edits <- bref.pos.estimates[duplicated(bref.pos.estimates$player)|duplicated(bref.pos.estimates$player, fromLast = TRUE),]
+if(nrow(bref_pos_manual_edits)>0){
+    View(bref_pos_manual_edits)
+}
+
+
 ########
 
 # boxscore  will be used to access players that are playing today and agg stats
