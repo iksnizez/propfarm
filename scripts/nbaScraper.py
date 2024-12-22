@@ -19,8 +19,10 @@ class nbaComScraper():
     scrapes various stat tables from nba.com
     """
 
-    def __init__(self, browser_path, pymysql_conn_str = None):
+    def __init__(self, browser_path, database_export = False, store_locally=True, pymysql_conn_str = None):
         self.browser_path = browser_path
+        self.database_export = database_export
+        self.store_locally = store_locally
         
         # connection string
         if pymysql_conn_str is None:
@@ -92,9 +94,7 @@ class nbaComScraper():
             ],
             sides = ['offensive', 'defensive'],
             season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
-            database_table = 'statsteamplaytypes',
-            database_export = False,
-            store_locally = False
+            database_table = 'statsteamplaytypes'
     ):
         """
         function to scrape nba.com team playtype stats on both sides of the ball
@@ -188,11 +188,11 @@ class nbaComScraper():
 
         #saving data
         #ranked.to_csv('../data/' + today + '_teamPlayTypes.csv', index=False)
-        if database_export:
+        if self.database_export:
             self.export_database(ranked, database_table, self.pymysql_conn_str)
 
         # add to main class object holding all data
-        if store_locally:
+        if self.store_locally:
             self.data_all[database_table] = ranked
 
         # save all urls that failed
@@ -206,9 +206,7 @@ class nbaComScraper():
             sides = {'offensive':'shooting', 'defensive':'opponent-shooting'},
             season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
             lastNgames = 10,
-            database_table = 'statsteamshotzones',
-            database_export = False,
-            store_locally = False
+            database_table = 'statsteamshotzones'
     ):
         """
         function to scrape nba.com team shot zone stats on both sides of the ball
@@ -301,11 +299,11 @@ class nbaComScraper():
 
         #save data
         #dfZoneShooting.to_csv('../data/' + today + '_teamShotZones.csv', index=False)
-        if database_export:
+        if self.database_export:
             self.export_database(dfZoneShooting, database_table, self.pymysql_conn_str)
 
         # add to main class object holding all data
-        if store_locally:
+        if self.store_locally:
             self.data_all[database_table] = dfZoneShooting
 
         # save all urls that failed
@@ -322,9 +320,7 @@ class nbaComScraper():
             ],
             sides = ['offensive'],
             season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
-            database_table = 'statsplayerplaytypes',
-            database_export = False,
-            store_locally = False
+            database_table = 'statsplayerplaytypes'
     ):
         """
         function to scrape nba.com player play type stats on offense
@@ -466,11 +462,11 @@ class nbaComScraper():
 
         #save data
         #ranked.to_csv('../data/' + today + '_playerPlayTypes.csv', index=False)
-        if database_export:
+        if self.database_export:
             self.export_database(ranked, database_table, self.pymysql_conn_str)
 
         # add to main class object holding all data
-        if store_locally:
+        if self.store_locally:
             self.data_all[database_table] = ranked
 
         # save all urls that failed
@@ -483,9 +479,7 @@ class nbaComScraper():
             base_url = 'https://www.nba.com/stats/players/shooting?DistanceRange=By+Zone&LastNGames={lastNgames}&SeasonType={type}', 
             season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
             lastNgames = 10,
-            database_table = 'statsplayershotzones',
-            database_export = False,
-            store_locally = False
+            database_table = 'statsplayershotzones'
     ):
         """
         function to scrape nba.com player shot zone stats on offense
@@ -600,11 +594,11 @@ class nbaComScraper():
         
         #save data
         #dfpZoneShooting.to_csv('../data/' + today + '_playerShotZones.csv', index=False)
-        if database_export:
+        if self.database_export:
             self.export_database(dfpZoneShooting, database_table, self.pymysql_conn_str)
 
         # add to main class object holding all data
-        if store_locally:
+        if self.store_locally:
             self.data_all[database_table] = dfpZoneShooting
 
         # save all urls that failed
@@ -619,9 +613,7 @@ class nbaComScraper():
         day_adjuster = -1,
         season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
         #lastNgames = 10,
-        database_table = 'statsplayerpassing',
-        database_export = False,
-        store_locally = False
+        database_table = 'statsplayerpassing'
     ):
         """
         function to scrape nba.com player passing stats on offense
@@ -748,11 +740,11 @@ class nbaComScraper():
         driver.close()
 
 
-        if database_export:
+        if self.database_export:
             self.export_database(df, database_table, self.pymysql_conn_str)
 
         # add to main class object holding all data
-        if store_locally:
+        if self.store_locally:
             self.data_all[database_table] = df
 
         # save all urls that failed
@@ -767,9 +759,7 @@ class nbaComScraper():
         day_adjuster = -1,
         season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
         #lastNgames = 10,
-        database_table = 'statsplayerrebounding',
-        database_export = False,
-        store_locally = False
+        database_table = 'statsplayerrebounding'
     ):
         """
         function to scrape nba.com player passing stats on offense
@@ -894,11 +884,11 @@ class nbaComScraper():
 
         driver.close()
 
-        if database_export:
+        if self.database_export:
             self.export_database(df, database_table, self.pymysql_conn_str)
 
         # add to main class object holding all data
-        if store_locally:
+        if self.store_locally:
             self.data_all[database_table] = df
 
         # save all urls that failed
@@ -922,13 +912,13 @@ class nbaComScraper():
 #######################################################################################
 if __name__ == '__main__':
     print('running scraper....')
-    db_export = False
-    save_dfs = True
     lastNgames = 10
     day_adj = -1
 
     scraper = nbaComScraper(
         browser_path = '..\\browser\\geckodriver.exe',
+        database_export = True, 
+        store_locally=True,
         pymysql_conn_str = None
     )
 
@@ -942,9 +932,7 @@ if __name__ == '__main__':
         ],
         sides = ['offensive', 'defensive'],
         season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
-        database_table = 'statsteamplaytypes',
-        database_export = db_export,
-        store_locally = save_dfs
+        database_table = 'statsteamplaytypes'
     )
 
     scraper.get_team_shotzone_data(
@@ -952,9 +940,7 @@ if __name__ == '__main__':
         sides = {'offensive':'shooting', 'defensive':'opponent-shooting'},
         season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
         lastNgames = lastNgames,
-        database_table = 'statsteamshotzones',
-        database_export = db_export,
-        store_locally = save_dfs
+        database_table = 'statsteamshotzones'
     )
 
     scraper.get_player_playtype_data(
@@ -965,18 +951,14 @@ if __name__ == '__main__':
         ],
         sides = ['offensive'],
         season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
-        database_table = 'statsplayerplaytypes',
-        database_export = db_export,
-        store_locally = save_dfs
+        database_table = 'statsplayerplaytypes'
     )
 
     scraper.get_player_shotzone_data(
         base_url = 'https://www.nba.com/stats/players/shooting?DistanceRange=By+Zone&LastNGames={lastNgames}&SeasonType={type}', 
         season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
         lastNgames = lastNgames,
-        database_table = 'statsplayershotzones',
-        database_export = db_export,
-        store_locally = save_dfs
+        database_table = 'statsplayershotzones'
     )
 
     scraper.get_player_passing_data(
@@ -985,9 +967,7 @@ if __name__ == '__main__':
         day_adjuster = day_adj,
         season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
         #lastNgames = 10,
-        database_table = 'statsplayerpassing',
-        database_export = db_export,
-        store_locally = save_dfs
+        database_table = 'statsplayerpassing'
     )
 
     scraper.get_player_rebounding_data(
@@ -996,9 +976,7 @@ if __name__ == '__main__':
         day_adjuster = day_adj,
         season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
         #lastNgames = 10,
-        database_table = 'statsplayerrebounding',
-        database_export = db_export,
-        store_locally = save_dfs
+        database_table = 'statsplayerrebounding'
     )
 
     print('scraper finished....')
