@@ -17,7 +17,7 @@ warnings.filterwarnings('ignore')
 
 class scraper():
     """
-    scrapes various stat tables from nba.com
+    facilitates scraping various stat tables from multiple websites
     """
 
     def __init__(self, browser_path, database_export = False, store_locally=True, pymysql_conn_str = None):
@@ -53,6 +53,7 @@ class scraper():
             'today':datetime.today().strftime('%Y-%m-%d')
         }
 
+        # regex replacement mapping used to make more joinable names
         self.suffix_replace = {
             "\\.":"", "`":"", "'":"",
             " III$":"", " IV$":"", " II$":"", " iii$":"", " ii$":"", " iv$":"", " v$":"", " V$":"",
@@ -72,6 +73,8 @@ class scraper():
             "Dario .*":"dario saric", "Alperen .*":"alperen sengun", "Luka.*amanic":"luka samanic"
         }
 
+    ##################
+    # general functions
     def open_browser(self, browser_path = None):
         
         # an override browswer path can be provided but normally use the one provided whe nthe class is created 
@@ -113,6 +116,7 @@ class scraper():
             value = re.sub(pattern, replacement, value, flags=re.IGNORECASE)
         return value
 
+    ################
     # nba com scrapes
     def get_nba_team_playtype_data(
             self,
@@ -925,6 +929,7 @@ class scraper():
 
         return
 
+    ################
     # basketball reference scrapes
     def get_bref_pos_estimates(
         self,
@@ -1042,6 +1047,7 @@ class scraper():
 
         bref_pos_estimates = bref_pos_estimates.drop(cols_drop, axis = 1)
         # convert pct to decimals
+        bref_pos_estimates = bref_pos_estimates.replace('', 0)
         bref_pos_estimates[columns_to_convert] = bref_pos_estimates[columns_to_convert].fillna(0).astype(float).div(100)
         # assign pos based on max estimate from bref
         bref_pos_estimates['pos'] = bref_pos_estimates[columns_to_convert].idxmax(axis=1)

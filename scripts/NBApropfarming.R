@@ -67,7 +67,7 @@ search.date <- Sys.Date() + date_change
 conn <- harvestDBconnect(league = league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
-query.pos.ests <- paste("SELECT b.player, b.pos, p.actnetPlayerId, p.hooprId FROM brefmisc b LEFT JOIN players p ON b.joinName = p.joinName WHERE date = '", search.date, "';", sep="")
+query.pos.ests <- paste("SELECT b.player, b.pos, b.team, p.actnetId actnetPlayerId, p.hooprId FROM brefmisc b LEFT JOIN players p ON b.joinName = p.joinName WHERE date = '", search.date, "';", sep="")
 bref.pos.estimates <-  dbGetQuery(conn, query.pos.ests)
 
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
@@ -77,9 +77,9 @@ bref.pos.estimates <- bref.pos.estimates %>% distinct()
 
 ##### FILTER FOR TRADES AND SIGNINGS  Basketball ref doesn't remove players from old teams
 bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Scotty Pippen Jr.' & is.na(actnetPlayerId)))
-team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Thomas Bryant' & team == 'MIA'))
-team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Dennis Schröder' & team == 'BRK'))
-team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Reece Beekman' & team == 'GSW'))
+bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Thomas Bryant' & team == 'MIA'))
+bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Dennis Schröder' & team == 'BRK'))
+bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Reece Beekman' & team == 'GSW'))
 
 #return duplicated rows after players move teams
 bref_pos_manual_edits <- bref.pos.estimates[duplicated(bref.pos.estimates$player)|duplicated(bref.pos.estimates$player, fromLast = TRUE),]
@@ -87,6 +87,7 @@ if(nrow(bref_pos_manual_edits)>0){
     View(bref_pos_manual_edits)
 }
 ########
+
 
 # boxscore  will be used to access players that are playing today and agg stats
 boxscore.player <- load_nba_player_box(s) %>% 
