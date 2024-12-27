@@ -907,6 +907,15 @@ class nbaComScraper():
     ##'statsplayerrebounding': {'url': [], 'db': []}}
     # but will calling gen_self_dict_entry at the start of every function mess up the loop?
 
+
+
+class brefScraper():
+    """
+    scrapes various stat tables from basketball-reference.com
+    """
+    
+
+
 #######################################################################################
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 #######################################################################################
@@ -980,3 +989,14 @@ if __name__ == '__main__':
     )
 
     print('scraper finished....')
+
+    # TODO: add check for number of errors
+    url_error_count = 0
+    db_error_count = 0
+    for k, v in scraper.scrape_errors.items():
+        url_error_count += len(v['url'])
+        db_error_count += len(v['db'])
+
+    total_errors = url_error_count + db_error_count
+    if total_errors > 0:
+        print('total scraper errors:', total_errors)
