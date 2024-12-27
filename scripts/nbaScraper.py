@@ -1,5 +1,5 @@
 import pandas as pd
-import json, time
+import json, time, re
 from datetime import datetime
 
 from sqlalchemy import create_engine
@@ -9,12 +9,13 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
+from selenium.common.exceptions import NoSuchElementException
 
 import warnings 
 warnings.filterwarnings('ignore')
 
-
-class nbaComScraper():
+class scraper():
     """
     scrapes various stat tables from nba.com
     """
@@ -52,6 +53,25 @@ class nbaComScraper():
             'today':datetime.today().strftime('%Y-%m-%d')
         }
 
+        self.suffix_replace = {
+            "\\.":"", "`":"", "'":"",
+            " III$":"", " IV$":"", " II$":"", " iii$":"", " ii$":"", " iv$":"", " v$":"", " V$":"",
+            " jr$":"", " sr$":"", " jr.$":"", " sr.$":"", " Jr$":"", " Sr$":"", " Jr.$":"", " Sr.$":"", 
+            " JR$":"", " SR$":"", " JR.$":"", " SR.$":"",
+            "š":"s","ş":"s", "š":"s", 'š':"s", "š":"s",
+            "ž":"z",
+            "þ":"p","ģ":"g",
+            "à":"a","á":"a","â":"a","ã":"a","ä":"a","å":"a",'ā':"a",
+            "ç":"c",'ć':"c", 'č':"c",
+            "è":"e","é":"e","ê":"e","ë":"e",'é':"e",
+            "ì":"i","í":"i","î":"i","ï":"i", "İ":"I",	
+            "ð":"o","ò":"o","ó":"o","ô":"o","õ":"o","ö":"o",'ö':"o",
+            "ù":"u","ú":"u","û":"u","ü":"u","ū":"u",
+            "ñ":"n","ņ":"n",
+            "ý":"y",
+            "Dario .*":"dario saric", "Alperen .*":"alperen sengun", "Luka.*amanic":"luka samanic"
+        }
+
     def open_browser(self, browser_path = None):
         
         # an override browswer path can be provided but normally use the one provided whe nthe class is created 
@@ -85,7 +105,16 @@ class nbaComScraper():
         self.scrape_errors[database_table]['url'] = []
         self.scrape_errors[database_table]['db'] = []
 
-    def get_team_playtype_data(
+    def apply_regex_replacements(self, value):
+        """
+        used to format names into their most joinable form
+        """
+        for pattern, replacement in self.suffix_replace.items():
+            value = re.sub(pattern, replacement, value, flags=re.IGNORECASE)
+        return value
+
+    # nba com scrapes
+    def get_nba_team_playtype_data(
             self,
             base_url = 'https://www.nba.com/stats/teams/{playtype}?TypeGrouping={sideofball}&SeasonType={type}',
             play_types = [
@@ -200,7 +229,7 @@ class nbaComScraper():
 
         return
 
-    def get_team_shotzone_data(            
+    def get_nba_team_shotzone_data(            
             self,
             base_url = 'https://www.nba.com/stats/teams/{sideOfBall}?DistanceRange=By+Zone&LastNGames={lastNgames}&SeasonType={type}', 
             sides = {'offensive':'shooting', 'defensive':'opponent-shooting'},
@@ -311,7 +340,7 @@ class nbaComScraper():
 
         return
 
-    def get_player_playtype_data(            
+    def get_nba_player_playtype_data(            
             self,
             base_url = 'https://www.nba.com/stats/players/{playtype}?TypeGrouping={sideofball}&SeasonType={type}', 
             play_types = [
@@ -474,7 +503,7 @@ class nbaComScraper():
 
         return
 
-    def get_player_shotzone_data(            
+    def get_nba_player_shotzone_data(            
             self,
             base_url = 'https://www.nba.com/stats/players/shooting?DistanceRange=By+Zone&LastNGames={lastNgames}&SeasonType={type}', 
             season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
@@ -606,7 +635,7 @@ class nbaComScraper():
 
         return
 
-    def get_player_passing_data(            
+    def get_nba_player_passing_data(            
         self,
         base_url = 'https://www.nba.com/stats/players/passing?DateFrom={d1}&DateTo={d2}&LastNGames=0&PerMode=Totals&SeasonType={type}', 
         today_date = None,
@@ -752,7 +781,7 @@ class nbaComScraper():
 
         return
 
-    def get_player_rebounding_data(            
+    def get_nba_player_rebounding_data(            
         self,
         base_url = 'https://www.nba.com/stats/players/rebounding?DateFrom={d1}&DateTo={d2}&LastNGames=0&PerMode=Totals&SeasonType={type}', 
         today_date = None,
@@ -896,6 +925,143 @@ class nbaComScraper():
 
         return
 
+    # basketball reference scrapes
+    def get_bref_pos_estimates(
+        self,
+        base_url = 'https://www.basketball-reference.com/teams/{team}/{season}.html#pbp', 
+        today_date = None,
+        season = 2025,
+        database_table = 'brefmisc'
+    ):
+        """
+        function to scrape basketball reference player position estimates
+        they up date the estimates every day
+
+        * base_url = desired scraping url -ex: https://www.basketball-reference.com/teams/PHI/2024.html#pbp
+        * database_table = name that will be used if exporting to database and also as the key in dictionary holding all df's
+        
+        Data will be scraped and added to the class objects appropiate data frame
+
+        returns nothing since data is stored in class
+        """
+        # add table to class storage dictionaries
+        self.gen_self_dict_entry(database_table)
+
+        # this can be farther back than yesterday and will be the last date with games completed.
+        if today_date == None:
+            today_date = self.meta_data['today_dt']
+        else:
+            today_date = pd.to_datetime(today_date)
+        
+        all_team_data = []
+        url_errors = []
+
+        # basketball ref team url abbrevs
+        bref_team_abbr = [
+            'GSW','DEN','POR','SAC','TOR','DAL','PHO','CHI',
+            'LAL','HOU','MIA','MEM','DET','MIL','NOP','MIN',
+            'CLE','OKC','LAC','BRK','SAS','NYK','WAS','CHO',
+            'UTA','IND','BOS','PHI','ATL','ORL'
+        ]
+        
+        # col names in the database
+        bref_cols = [
+            'player', 'age', 'pos', 'gp', 'gs', 'mp', 'PG', 'SG', 'SF',
+            'PF', 'C', 'onCourtPlusMinusPer100', 'onOffPlusMinusPer100',
+            'badPass', 'lostBall', 'shootFoulCommitted', 'offFoulCommitted',
+            'shootFoulDrawn', 'offFoulDrawn', 'ptsGenFromAst', 'andOnes', 'shotsBlk', 'awards',
+            'date', 'team'
+        ]
+
+        driver = self.open_browser()
+        # loop through each team webpage to gather data        
+        for i in bref_team_abbr:
+            try:
+                url = base_url.format(team = i, season = str(season))
+                driver.get(url)
+                time.sleep(2)
+
+                table_id = 'pbp_stats'
+                table = None  # Placeholder for the table element
+                scroll_attempts = 30  # Number of scrolling attempts
+                scroll_step = 500  # Pixels to scroll down on each attempt
+
+                # scroll through the page to make the table of interest visible so it can be pulled from the html
+                for attempt in range(scroll_attempts):
+                    try:
+                        # Try to find the table
+                        table = driver.find_element(By.ID, table_id)
+                        if table.is_displayed():  # Check if the table is now visible
+                            break
+                    except NoSuchElementException:
+                        pass  # Table not found, keep scrolling
+
+                    # Scroll down by the step size
+                    driver.execute_script(f"window.scrollBy(0, {scroll_step});")
+
+                # go back to table to grab page source data
+                driver.execute_script("arguments[0].scrollIntoView();", table)
+
+                ps = driver.page_source
+                soup = bs(ps)
+                tables = soup.find_all('table')
+
+                # select the table of interest
+                for t in tables:
+                    tbl = t.get_attribute_list('id')[0]
+                    if tbl == table_id:
+                        table = t
+
+                # extract each row
+                rows = table.find('tbody').find_all('tr')
+                for r in rows:
+                    
+                    row = []    
+                    
+                    # extract each piece of data from a single row (cols in the table in the html)
+                    rowData = r.find_all('td')
+                    for j in rowData:
+                        row.append(j.text)
+
+                    row.append(self.meta_data['today'])
+                    row.append(i) # team name
+                    
+                    all_team_data.append(row)
+                    
+            
+            except:
+                url_errors.append([i, season])
+                continue
+        
+        driver.close()
+        bref_pos_estimates = pd.DataFrame(all_team_data, columns = bref_cols)
+
+        # drop columns that of no interest and process some of the data
+        cols_drop = ['pos', 'awards']
+        columns_to_convert = ['PG', 'SG', 'SF', 'PF', 'C']
+
+        bref_pos_estimates = bref_pos_estimates.drop(cols_drop, axis = 1)
+        # convert pct to decimals
+        bref_pos_estimates[columns_to_convert] = bref_pos_estimates[columns_to_convert].fillna(0).astype(float).div(100)
+        # assign pos based on max estimate from bref
+        bref_pos_estimates['pos'] = bref_pos_estimates[columns_to_convert].idxmax(axis=1)
+
+        # use regex replacement mapping to create joinable names.
+        bref_pos_estimates['joinName'] = bref_pos_estimates['player'].apply(self.apply_regex_replacements).str.lower()
+
+        
+        if self.database_export:
+            self.export_database(bref_pos_estimates, database_table, self.pymysql_conn_str)
+
+        # add to main class object holding all data
+        if self.store_locally:
+            self.data_all[database_table] = bref_pos_estimates
+
+        # save all urls inputs that failed
+        self.scrape_errors[database_table]['url'] = url_errors
+
+        return
+
 
     # TODO: add functionality to check if there were any scraping errors and re run the necessary functions
     # loop over scrape_errors
@@ -908,14 +1074,6 @@ class nbaComScraper():
     # but will calling gen_self_dict_entry at the start of every function mess up the loop?
 
 
-
-class brefScraper():
-    """
-    scrapes various stat tables from basketball-reference.com
-    """
-    
-
-
 #######################################################################################
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 #######################################################################################
@@ -924,7 +1082,7 @@ if __name__ == '__main__':
     lastNgames = 10
     day_adj = -1
 
-    scraper = nbaComScraper(
+    scraper = scraper(
         browser_path = '..\\browser\\geckodriver.exe',
         database_export = True, 
         store_locally=True,
@@ -933,7 +1091,7 @@ if __name__ == '__main__':
 
     today = scraper.meta_data['today_dt']
 
-    scraper.get_team_playtype_data(
+    scraper.get_nba_team_playtype_data(
         base_url = 'https://www.nba.com/stats/teams/{playtype}?TypeGrouping={sideofball}&SeasonType={type}',
         play_types = [
             'isolation', 'transition', 'ball-handler', 'roll-man', 'playtype-post-up',
@@ -944,7 +1102,7 @@ if __name__ == '__main__':
         database_table = 'statsteamplaytypes'
     )
 
-    scraper.get_team_shotzone_data(
+    scraper.get_nba_team_shotzone_data(
         base_url = 'https://www.nba.com/stats/teams/{sideOfBall}?DistanceRange=By+Zone&LastNGames={lastNgames}&SeasonType={type}', 
         sides = {'offensive':'shooting', 'defensive':'opponent-shooting'},
         season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
@@ -952,7 +1110,7 @@ if __name__ == '__main__':
         database_table = 'statsteamshotzones'
     )
 
-    scraper.get_player_playtype_data(
+    scraper.get_nba_player_playtype_data(
         base_url = 'https://www.nba.com/stats/players/{playtype}?TypeGrouping={sideofball}&SeasonType={type}', 
         play_types = [
             'isolation', 'transition', 'ball-handler', 'roll-man', 'playtype-post-up',
@@ -963,14 +1121,14 @@ if __name__ == '__main__':
         database_table = 'statsplayerplaytypes'
     )
 
-    scraper.get_player_shotzone_data(
+    scraper.get_nba_player_shotzone_data(
         base_url = 'https://www.nba.com/stats/players/shooting?DistanceRange=By+Zone&LastNGames={lastNgames}&SeasonType={type}', 
         season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
         lastNgames = lastNgames,
         database_table = 'statsplayershotzones'
     )
 
-    scraper.get_player_passing_data(
+    scraper.get_nba_player_passing_data(
         base_url = 'https://www.nba.com/stats/players/passing?DateFrom={d1}&DateTo={d2}&LastNGames=0&PerMode=Totals&SeasonType={type}', 
         today_date = today,
         day_adjuster = day_adj,
@@ -979,13 +1137,20 @@ if __name__ == '__main__':
         database_table = 'statsplayerpassing'
     )
 
-    scraper.get_player_rebounding_data(
+    scraper.get_nba_player_rebounding_data(
         base_url = 'https://www.nba.com/stats/players/rebounding?DateFrom={d1}&DateTo={d2}&LastNGames=0&PerMode=Totals&SeasonType={type}', 
         today_date = today,
         day_adjuster = day_adj,
         season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
         #lastNgames = 10,
         database_table = 'statsplayerrebounding'
+    )
+
+    scraper.get_bref_pos_estimates(
+        base_url = 'https://www.basketball-reference.com/teams/{team}/{season}.html#pbp', 
+        today_date = today,
+        season = 2025,
+        database_table = 'brefmisc'
     )
 
     print('scraper finished....')

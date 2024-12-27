@@ -3,6 +3,8 @@
 .RData
 .Ruserdata
 */.ipynb_checkpoints/
+__pycache__/
+*/__pycache__/
 */scratch/
 data/
 output/

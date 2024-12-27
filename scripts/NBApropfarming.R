@@ -30,62 +30,62 @@ search.date <- Sys.Date() + date_change
 ###########################
 
 #############
+# DEPRECATED - SCRAPE MOVED TO PYTHON
 # retrieve most recent basketball-reference player position estimate - using the players highest % as their POS assignment
 #############
 ### >>>>>>>>>>>>>FUNCTION IN DATACRACKERS NEEDS TO BE UPDATED FOR PLAYERS MOVING, FILTER OUT OLD TEAMS
-# use custom function to retrieve basketball-reference position estimates
-bref.pos.estimates <- players.played.position.estimate(s,search.date)
-
-# add to playerIds and append to db
-conn <- harvestDBconnect(league = league)
-dbSendQuery(conn, "SET GLOBAL local_infile = true;")
-
-# query to retrieve player id since roto doesn't have one
-players.query <- 'SELECT joinName, actnetId actnetPlayerId, hooprId FROM players WHERE hooprId <> 932' # 2 brandon williams, 932 is from decades ago. filter out to remove dups when joining
-playersdb <- dbGetQuery(conn, players.query) %>%
-                mutate(
-                    joinName = trimws(tolower(stringr::str_replace_all(joinName, suffix.rep)))
-                ) 
-
-# add actnetid to basketball ref estimates
-bref.pos.estimates <- bref.pos.estimates %>% 
-    left_join(playersdb, by = 'joinName')
-
-rm(playersdb)
-
-dbWriteTable(conn, name = "brefmisc", value= bref.pos.estimates, 
-             row.names = FALSE, overwrite = FALSE, append = TRUE)
-
-dbSendQuery(conn, "SET GLOBAL local_infile = false;")
-dbDisconnect(conn)
-
-# checks for players that have changed teams and need their old team deleted in the current date, also need to adjust datacracker to ignore old team
-#if(nrow(bref.pos.estimates[duplicated(bref.pos.estimates$player)|duplicated(bref.pos.estimates$player, fromLast = TRUE),]) > 0){
-#    View(bref.pos.estimates[duplicated(bref.pos.estimates$player)|duplicated(bref.pos.estimates$player, fromLast = TRUE),])
-#}
+## use custom function to retrieve basketball-reference position estimates
+#bref.pos.estimates <- players.played.position.estimate(s,search.date)
+#
+## add to playerIds and append to db
+#conn <- harvestDBconnect(league = league)
+#dbSendQuery(conn, "SET GLOBAL local_infile = true;")
+#
+## query to retrieve player id since roto doesn't have one
+#players.query <- 'SELECT joinName, actnetId actnetPlayerId, hooprId FROM players WHERE hooprId <> 932' # 2 brandon williams, 932 is from decades ago. filter out to remove dups when joining
+#playersdb <- dbGetQuery(conn, players.query) %>%
+#                mutate(
+#                    joinName = trimws(tolower(stringr::str_replace_all(joinName, suffix.rep)))
+#                ) 
+#
+## add actnetid to basketball ref estimates
+#bref.pos.estimates <- bref.pos.estimates %>% 
+#    left_join(playersdb, by = 'joinName')
+#
+#rm(playersdb)
+#
+#dbWriteTable(conn, name = "brefmisc", value= bref.pos.estimates, 
+#             row.names = FALSE, overwrite = FALSE, append = TRUE)
+#
+#dbSendQuery(conn, "SET GLOBAL local_infile = false;")
+#dbDisconnect(conn)
 #####
 
-################# load from db if already pulled on date ################################################
+#############
+# load basketball reference position assignments for players
+#############
 conn <- harvestDBconnect(league = league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
-query.pos.ests <- paste("SELECT * FROM brefmisc WHERE date = '", search.date, "';", sep="")
+query.pos.ests <- paste("SELECT b.player, b.pos, p.actnetPlayerId, p.hooprId FROM brefmisc b LEFT JOIN players p ON b.joinName = p.joinName WHERE date = '", search.date, "';", sep="")
 bref.pos.estimates <-  dbGetQuery(conn, query.pos.ests)
 
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 
 bref.pos.estimates <- bref.pos.estimates %>% distinct()
-######
 
+##### FILTER FOR TRADES AND SIGNINGS  Basketball ref doesn't remove players from old teams
 bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Scotty Pippen Jr.' & is.na(actnetPlayerId)))
+team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Thomas Bryant' & team == 'MIA'))
+team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Dennis Schröder' & team == 'BRK'))
+team.pos.estimates <- team.pos.estimates %>% filter(!(player == 'Reece Beekman' & team == 'GSW'))
+
 #return duplicated rows after players move teams
 bref_pos_manual_edits <- bref.pos.estimates[duplicated(bref.pos.estimates$player)|duplicated(bref.pos.estimates$player, fromLast = TRUE),]
 if(nrow(bref_pos_manual_edits)>0){
     View(bref_pos_manual_edits)
 }
-
-
 ########
 
 # boxscore  will be used to access players that are playing today and agg stats
