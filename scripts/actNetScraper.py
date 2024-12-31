@@ -1,8 +1,14 @@
-import json, time, pymysql, random
+import json, time, requests, pymysql, random
 import pandas as pd
 import numpy as np
+from datetime import datetime, timedelta
+
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.wait import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
+from selenium.common.exceptions import NoSuchElementException
 from bs4 import BeautifulSoup
 from sqlalchemy import create_engine
 
@@ -142,7 +148,14 @@ class actNetScraper:
                 'rushTds', 'rushYds', 'tackles'
             ]
         }
-        
+        self.schedule_urls = {
+            'mlb':'https://statsapi.mlb.com/api/v1/schedule?sportId=1&sportId=51&sportId=21&startDate={start}&endDate={end}&timeZone=America/New_York&gameType=E&&gameType=S&&gameType=R&&gameType=F&&gameType=D&&gameType=L&&gameType=W&&gameType=A&language=en&leagueId=104&&leagueId=103&&leagueId=160&&leagueId=590&&leagueId=&&leagueId=&sortBy=gameDate,gameType',
+            'nfl':'https://site.web.api.espn.com/apis/personalized/v2/scoreboard/header?sport=football&league=nfl&region=us&lang=en&contentorigin=espn&configuration=SITE_DEFAULT&platform=web&buyWindow=1m&showAirings=buy%2Clive%2Creplay&showZipLookup=true&tz=America%2FNew_York&postalCode=20001&authNetworks=espn3',
+            'nba':'https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json',
+            'wnba':'https://cdn.wnba.com/static/json/liveData/scoreboard/todaysScoreboard_10.json',
+            'nhl':'https://api-web.nhle.com/v1/schedule/{date}'
+        }
+
         # statis vars for database maint
         self.columns_players = ['playerId', 'player', 'abbr']
         self.player_list = []
@@ -154,11 +167,13 @@ class actNetScraper:
 
         # this will hold scrapes that errored out
         self.scrape_errors = {}
-        for i in leagues:
+        for i in self.leagues:
             self.scrape_errors[i] = {}
             self.scrape_errors[i]['missing_dates'] = []
             self.scrape_errors[i]['missing_props'] = []
             self.scrape_errors[i]['db'] = []
+
+        self.run_date_str = datetime.today().strftime('%Y-%m-%d')
 
     #############
     # general helper funcs
@@ -174,6 +189,113 @@ class actNetScraper:
 
         return pymysql_conn_str
 
+    def open_browser(self, browser_path = None, retry_delay = 5, retry_attempts = 3):
+        
+        # an override browswer path can be provided but normally use the one provided whe nthe class is created 
+        if browser_path is None:
+            browser_path = self.browser_path
+        
+        service = Service(browser_path)
+
+        driver = webdriver.Firefox(service=service)
+        driver.implicitly_wait(10)
+        
+        # loop to catch gecko updates that normally stall the code due to browser restart
+        for attempt in range(retry_attempts):
+            try:
+                print(f"Attempt {attempt + 1} of {retry_attempts} to launch Firefox...")
+                # Initialize WebDriver (adjust options/path as needed)
+                driver = webdriver.Firefox(service=service)
+                driver.get('google.com')
+                print("Firefox launched successfully.")
+                break  # Exit the loop if successful
+            except:
+                print("Checking if Firefox is updating...")
+                # Wait before retrying
+                time.sleep(retry_delay)
+
+        # start browser
+        return driver
+    
+    def check_for_league_games(self, date_check = None, update_class_leagues_var = True):
+        """
+            provide a date and return a list of the leagues with a game today. 
+            checks for all 5 - NBA, WNBA, NFL, NHL, MLB
+        """
+        if date_check == None:
+            date_check = self.run_date_str
+        else:
+            date_check = date_check.strftime('%Y-%m-%d')
+        
+        # will hold league names for one's that have a game on search date
+        leagues_with_games = []
+        
+        for k, v in self.schedule_urls.items():
+            
+            if len(v) == 0 or pd.isnull(v):
+                continue
+
+            else:
+                url = v
+                
+                # wnba and nba
+                if (k == 'wnba') or (k == 'nba'):
+
+                    r = requests.get(url)
+                    url_json = r.json()
+                    games = url_json['scoreboard']['games']
+                    if len(games) > 0:
+                        leagues_with_games.append(k)
+
+                elif k == 'mlb':
+                    url = url.format(start = date_check, end = date_check)
+                    r = requests.get(url)
+                    url_json = r.json()
+                    games = int(url_json['totalGames'])
+                    if games > 0:
+                        leagues_with_games.append(k)
+                    
+                elif k == 'nhl':
+                
+                    url = url.format(date = date_check)
+                    r = requests.get(url)
+                    url_json = r.json()
+
+                    game_list = url_json.get('gameWeek')
+                    for i in game_list:
+                        
+                        dt = i.get('date')
+                        if dt == date_check:
+                            
+                            games = int(i.get('numberOfGames'))
+                            if games > 0:
+                                leagues_with_games.append(k)
+
+                elif k == 'nfl':
+                    # TODO going to need to see how this url looks in the offseason
+                    r = requests.get(url)
+                    url_json = r.json()
+
+                    nfl_games_in_week = url_json.get('sports')[0].get('leagues')[0].get('events')
+
+                    # loop through the games in the data returned for the week
+                    for i in nfl_games_in_week:
+
+                        # looks like dates and times are stored on greenwich/ UTC, adj back to our time zone for correct dates
+                        hour_adj_to_eastern = -5
+                        game_date_time = pd.to_datetime(i['date']) + timedelta(hours=hour_adj_to_eastern)
+                        
+                        # check if the game dates match the run date
+                        if game_date_time.date().strftime('%Y-%m-%d') == date_check:
+                            leagues_with_games.append(k)
+                            break
+        
+        # update the class variable for leagues with games today
+        if update_class_leagues_var:
+            self.leagues = leagues_with_games
+
+        return leagues_with_games
+
     #############
     # site scraper
 
@@ -184,6 +306,9 @@ class actNetScraper:
             looper = self.leagues
         else:
             looper = leagues_override
+
+        # open selenium browser
+        driver = self.open_browser(browser_path = self.browser_path, retry_delay = 5, retry_attempts = 3)
 
         for i in looper:
 
@@ -204,10 +329,6 @@ class actNetScraper:
             try:
                 league = i.lower()
                 failed = []
-
-                # open selenium browser
-                service = Service(self.browser_path)
-                driver = webdriver.Firefox(service=service)
 
                 # looping through each prop type on the site  
                 for pt in self.map_option_ids[league].keys():
@@ -263,7 +384,6 @@ class actNetScraper:
                 
                 # loop through each game date for each prop
                 for d in range(0,len(self.dates)):
-                    print(d)
                     # game date
                     date = self.dates[d]
                     
@@ -477,7 +597,7 @@ class actNetScraper:
             all_props = self.prop_names[league]
             retrieved_props = df_props['prop'].unique().tolist()
             missed_props = list(np.setdiff1d(all_props, retrieved_props))
-            self.scrape_errors[i]['missing_props'].extend(missed_props)
+            self.scrape_errors[league]['missing_props'].extend(missed_props)
             print("missing props: ", missed_props)
             print(df_props.groupby('prop').agg({'propId':['count']}).T)
         
@@ -550,5 +670,8 @@ class actNetScraper:
                 tran.rollback()
                 dbConnection.close()
 
-
+    # TODO
+    # check for missing props and scrape
+    def tryMissingProps(self):
+        pass
             

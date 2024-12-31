@@ -75,15 +75,30 @@ class scraper():
 
     ##################
     # general functions
-    def open_browser(self, browser_path = None):
+    def open_browser(self, browser_path = None, retry_delay = 5, retry_attempts = 3):
         
         # an override browswer path can be provided but normally use the one provided whe nthe class is created 
         if browser_path is None:
             browser_path = self.browser_path
-
-        # start browser
+        
         service = Service(browser_path)
+
         driver = webdriver.Firefox(service=service)
+        driver.implicitly_wait(10)
+        
+        # loop to catch gecko updates that normally stall the code due to browser restart
+        for attempt in range(retry_attempts):
+            try:
+                print(f"Attempt {attempt + 1} of {retry_attempts} to launch Firefox...")
+                # Initialize WebDriver (adjust options/path as needed)
+                driver = webdriver.Firefox(service=service)
+                driver.get('google.com')
+                print("Firefox launched successfully.")
+                break  # Exit the loop if successful
+            except:
+                print("Checking if Firefox is updating...")
+                # Wait before retrying
+                time.sleep(retry_delay)
 
         return driver
     
@@ -231,6 +246,7 @@ class scraper():
         # save all urls that failed
         self.scrape_errors[database_table]['url'] = url_errors
 
+        print('nba team play type scraped...')
         return
 
     def get_nba_team_shotzone_data(            
@@ -342,6 +358,7 @@ class scraper():
         # save all urls that failed
         self.scrape_errors[database_table]['url'] = url_errors
 
+        print('nba team shot zone scraped...')
         return
 
     def get_nba_player_playtype_data(            
@@ -505,6 +522,7 @@ class scraper():
         # save all urls that failed
         self.scrape_errors[database_table]['url'] = url_errors
 
+        print('nba player play type scraped...')
         return
 
     def get_nba_player_shotzone_data(            
@@ -637,6 +655,7 @@ class scraper():
         # save all urls that failed
         self.scrape_errors[database_table]['url'] = url_errors
 
+        print('nba player shot zone scraped...')
         return
 
     def get_nba_player_passing_data(            
@@ -783,6 +802,7 @@ class scraper():
         # save all urls that failed
         self.scrape_errors[database_table]['url'] = url_errors
 
+        print('nba player passing scraped...')
         return
 
     def get_nba_player_rebounding_data(            
@@ -927,7 +947,12 @@ class scraper():
         # save all urls that failed
         self.scrape_errors[database_table]['url'] = url_errors
 
+        print('nba player rebounding scraped...')
         return
+
+    #TODO: scrape
+    #playerDefRatingUrl = 'https://www.nba.com/stats/players/advanced?CF=MIN*GE*15&SeasonType=Regular%20Season&dir=-1&sort=DEF_RATING'
+    #teamDefRatingUrl = 'https://www.nba.com/stats/teams/advanced?LastNGames=10&dir=A&sort=DEF_RATING'
 
     ################
     # basketball reference scrapes
@@ -1066,6 +1091,7 @@ class scraper():
         # save all urls inputs that failed
         self.scrape_errors[database_table]['url'] = url_errors
 
+        print('bref player pos estimates scraped...')
         return
 
 
