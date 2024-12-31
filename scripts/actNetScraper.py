@@ -381,7 +381,7 @@ class actNetScraper:
         return      
 
     # process html
-    def processScrapes(self, remove_dups = True):
+    def processScrapes(self, remove_dups = True, specific_props = []):
         for league in self.leagues:
             print('scraping', league, '...')
             league = league.lower()
@@ -617,7 +617,11 @@ class actNetScraper:
                 )
 
             # final console output and checking for missed props
-            all_props = self.prop_names[league]
+            if specific_props > 0:  # TODO this is only build for the class initiated to a single date and league (used on missing props from the first run)
+                all_props = specific_props
+            else:
+                all_props = self.prop_names[league]
+                
             retrieved_props = df_props['prop'].unique().tolist()
             missed_props = list(np.setdiff1d(all_props, retrieved_props))
             # update class var to flag for missing props
