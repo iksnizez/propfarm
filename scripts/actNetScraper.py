@@ -19,17 +19,24 @@ class actNetScraper:
             self, 
             browser_path,
             dates, 
-            leagues = ['nba'],
+            leagues = None,
             database_export = False, 
             store_locally=True, 
-            config_path = '../../../Notes-General/config.txt'
+            config_path = '../../../Notes-General/config.txt',
+            second_run = False
         ):
         self.browser_path = browser_path
         self.database_export = database_export
         self.store_locally = store_locally
         self.config_path = config_path
         self.dates = dates
-        self.leagues = leagues
+        self.second_run = second_run
+        
+        # TODO this doesn't really handle when multiple dates are initiated. only good for a single date
+        if self.second_run: #skips the game checks when they have already been checked
+            self.leagues  = leagues
+        else: # first run check for games
+            self.leagues = self.check_for_league_games(date_check = self.run_date_str, league_check_list = leagues)
 
         # static info for league api's and json storage
         self.over_ids = {
@@ -213,7 +220,7 @@ class actNetScraper:
         # start browser
         return driver
     
-    def check_for_league_games(self, date_check = None, update_class_leagues_var = True):
+    def check_for_league_games(self, date_check = None, league_check_list = None):
         """
             provide a date and return a list of the leagues with a game today. 
             checks for all 5 - NBA, WNBA, NFL, NHL, MLB
@@ -222,11 +229,17 @@ class actNetScraper:
             date_check = self.run_date_str
         else:
             date_check = date_check.strftime('%Y-%m-%d')
-        
+
+        # if specific leagues aren't provided then it will check for all leagues.
+        leagues = self.schedule_urls.items()
+        # if specific leagues are provided then it will only run those that are provided
+        if league_check_list != None:
+            leagues = {key: leagues[key] for key in league_check_list if key in leagues}
+
         # will hold league names for one's that have a game on search date
         leagues_with_games = []
         
-        for k, v in self.schedule_urls.items():
+        for k, v in leagues:
             
             if len(v) == 0 or pd.isnull(v):
                 continue
@@ -286,10 +299,6 @@ class actNetScraper:
                             leagues_with_games.append(k)
                             break
         
-        # update the class variable for leagues with games today
-        if update_class_leagues_var:
-            self.leagues = leagues_with_games
-
         return leagues_with_games
 
     def gen_self_dict_entry(self, league_name):
@@ -308,7 +317,13 @@ class actNetScraper:
     def scrape(self, sleep_secs = 2, specific_props=[], leagues_override = None):
         
         if leagues_override == None:
-            looper = self.leagues
+            # stop the scraper if there are no league games today to avoid hitting the server
+            if len(self.leagues) == 0:
+                print('no league games today')
+                return
+            else:
+                looper = self.leagues
+
         else:
             looper = leagues_override
 
