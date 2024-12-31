@@ -166,12 +166,8 @@ class actNetScraper:
         self.data_all = {}
 
         # this will hold scrapes that errored out
+        self.scrape_error_flag = False
         self.scrape_errors = {}
-        for i in self.leagues:
-            self.scrape_errors[i] = {}
-            self.scrape_errors[i]['missing_dates'] = []
-            self.scrape_errors[i]['missing_props'] = []
-            self.scrape_errors[i]['db'] = []
 
         self.run_date_str = datetime.today().strftime('%Y-%m-%d')
 
@@ -296,6 +292,15 @@ class actNetScraper:
 
         return leagues_with_games
 
+    def gen_self_dict_entry(self, league_name):
+        """
+        used in scraping loop below to add keys for each league that is being scrapped to the error tracking vars
+        """
+        self.scrape_errors[league_name] = {}
+        self.scrape_errors[league_name]['missing_dates'] = []
+        self.scrape_errors[league_name]['missing_props'] = []
+        self.scrape_errors[league_name]['db'] = []
+
     #############
     # site scraper
 
@@ -311,6 +316,8 @@ class actNetScraper:
         driver = self.open_browser(browser_path = self.browser_path, retry_delay = 5, retry_attempts = 3)
 
         for i in looper:
+            # generate class variable dictionary item for error tracking
+            self.gen_self_dict_entry(i)
 
             # filtering props to scrape, class defaults to all props in init variable above
             if len(specific_props) > 0:
@@ -594,11 +601,16 @@ class actNetScraper:
                     playerTableName = 'actnetplayers'
                 )
 
+            # final console output and checking for missed props
             all_props = self.prop_names[league]
             retrieved_props = df_props['prop'].unique().tolist()
             missed_props = list(np.setdiff1d(all_props, retrieved_props))
-            self.scrape_errors[league]['missing_props'].extend(missed_props)
-            print("missing props: ", missed_props)
+            # update class var to flag for missing props
+            if len(missed_props) > 0:
+                self.scrape_error_flag = True
+                self.scrape_errors[league]['missing_props'].extend(missed_props)
+                print("missing props: ", missed_props)
+
             print(df_props.groupby('prop').agg({'propId':['count']}).T)
         
         return 

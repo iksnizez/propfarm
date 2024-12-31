@@ -45,6 +45,7 @@ class scraper():
         self.data_all = {}
 
         # this will hold scrapes that errored out
+        self.scrape_error_flag = False
         self.scrape_errors = {}
 
         # meta data - run date, etc.. 
@@ -244,7 +245,9 @@ class scraper():
             self.data_all[database_table] = ranked
 
         # save all urls that failed
-        self.scrape_errors[database_table]['url'] = url_errors
+        if len(url_errors) > 0:
+            self.scrape_error_flag = True
+            self.scrape_errors[database_table]['url'] = url_errors
 
         print('nba team play type scraped...')
         return
@@ -356,7 +359,9 @@ class scraper():
             self.data_all[database_table] = dfZoneShooting
 
         # save all urls that failed
-        self.scrape_errors[database_table]['url'] = url_errors
+        if len(url_errors) > 0:
+            self.scrape_error_flag = True
+            self.scrape_errors[database_table]['url'] = url_errors
 
         print('nba team shot zone scraped...')
         return
@@ -520,7 +525,9 @@ class scraper():
             self.data_all[database_table] = ranked
 
         # save all urls that failed
-        self.scrape_errors[database_table]['url'] = url_errors
+        if len(url_errors) > 0:
+            self.scrape_error_flag = True
+            self.scrape_errors[database_table]['url'] = url_errors
 
         print('nba player play type scraped...')
         return
@@ -653,7 +660,9 @@ class scraper():
             self.data_all[database_table] = dfpZoneShooting
 
         # save all urls that failed
-        self.scrape_errors[database_table]['url'] = url_errors
+        if len(url_errors) > 0:
+            self.scrape_error_flag = True
+            self.scrape_errors[database_table]['url'] = url_errors
 
         print('nba player shot zone scraped...')
         return
@@ -800,7 +809,9 @@ class scraper():
             self.data_all[database_table] = df
 
         # save all urls that failed
-        self.scrape_errors[database_table]['url'] = url_errors
+        if len(url_errors) > 0:
+            self.scrape_error_flag = True
+            self.scrape_errors[database_table]['url'] = url_errors
 
         print('nba player passing scraped...')
         return
@@ -945,7 +956,9 @@ class scraper():
             self.data_all[database_table] = df
 
         # save all urls that failed
-        self.scrape_errors[database_table]['url'] = url_errors
+        if len(url_errors) > 0:
+            self.scrape_error_flag = True
+            self.scrape_errors[database_table]['url'] = url_errors
 
         print('nba player rebounding scraped...')
         return
@@ -1089,7 +1102,9 @@ class scraper():
             self.data_all[database_table] = bref_pos_estimates
 
         # save all urls inputs that failed
-        self.scrape_errors[database_table]['url'] = url_errors
+        if len(url_errors) > 0:
+            self.scrape_error_flag = True
+            self.scrape_errors[database_table]['url'] = url_errors
 
         print('bref player pos estimates scraped...')
         return
