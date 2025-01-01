@@ -83,23 +83,7 @@ class scraper():
             browser_path = self.browser_path
         
         service = Service(browser_path)
-
         driver = webdriver.Firefox(service=service)
-        driver.implicitly_wait(10)
-        
-        # loop to catch gecko updates that normally stall the code due to browser restart
-        for attempt in range(retry_attempts):
-            try:
-                print(f"Attempt {attempt + 1} of {retry_attempts} to launch Firefox...")
-                # Initialize WebDriver (adjust options/path as needed)
-                driver = webdriver.Firefox(service=service)
-                driver.get('google.com')
-                print("Firefox launched successfully.")
-                break  # Exit the loop if successful
-            except:
-                print("Checking if Firefox is updating...")
-                # Wait before retrying
-                time.sleep(retry_delay)
 
         return driver
     

@@ -32,12 +32,7 @@ class actNetScraper:
         self.dates = dates
         self.second_run = second_run
         
-        # TODO this doesn't really handle when multiple dates are initiated. only good for a single date
-        if self.second_run: #skips the game checks when they have already been checked
-            self.leagues  = leagues
-        else: # first run check for games
-            self.leagues = self.check_for_league_games(date_check = self.run_date_str, league_check_list = leagues)
-
+        
         # static info for league api's and json storage
         self.over_ids = {
             'nba': [42,34,40,30,36,38,341,346,345,344,343],
@@ -178,6 +173,12 @@ class actNetScraper:
 
         self.run_date_str = datetime.today().strftime('%Y-%m-%d')
 
+        # TODO this doesn't really handle when multiple dates are initiated. only good for a single date
+        if self.second_run: #skips the game checks when they have already been checked
+            self.leagues  = leagues
+        else: # first run check for games
+            self.leagues = self.check_for_league_games(date_check = datetime.today().strftime('%Y-%m-%d'), league_check_list = leagues)
+
     #############
     # general helper funcs
     def get_pymysql_conn_str(self, league, config_path = '../../../Notes-General/config.txt'):
@@ -199,23 +200,7 @@ class actNetScraper:
             browser_path = self.browser_path
         
         service = Service(browser_path)
-
         driver = webdriver.Firefox(service=service)
-        driver.implicitly_wait(10)
-        
-        # loop to catch gecko updates that normally stall the code due to browser restart
-        for attempt in range(retry_attempts):
-            try:
-                print(f"Attempt {attempt + 1} of {retry_attempts} to launch Firefox...")
-                # Initialize WebDriver (adjust options/path as needed)
-                driver = webdriver.Firefox(service=service)
-                driver.get('google.com')
-                print("Firefox launched successfully.")
-                break  # Exit the loop if successful
-            except:
-                print("Checking if Firefox is updating...")
-                # Wait before retrying
-                time.sleep(retry_delay)
 
         # start browser
         return driver
@@ -228,7 +213,9 @@ class actNetScraper:
         if date_check == None:
             date_check = self.run_date_str
         else:
-            date_check = date_check.strftime('%Y-%m-%d')
+            # check for string
+            if type(date_check) != str:
+                date_check = date_check.strftime('%Y-%m-%d')
 
         # if specific leagues aren't provided then it will check for all leagues.
         leagues = self.schedule_urls.items()
@@ -382,6 +369,7 @@ class actNetScraper:
 
     # process html
     def processScrapes(self, remove_dups = True, specific_props = []):
+        
         for league in self.leagues:
             print('scraping', league, '...')
             league = league.lower()
@@ -615,13 +603,14 @@ class actNetScraper:
                     update_players = self.update_players,
                     playerTableName = 'actnetplayers'
                 )
+                
 
             # final console output and checking for missed props
-            if specific_props > 0:  # TODO this is only build for the class initiated to a single date and league (used on missing props from the first run)
+            if len(specific_props > 0:  # TODO this is only build for the class initiated to a single date and league (used on missing props from the first run)
                 all_props = specific_props
             else:
                 all_props = self.prop_names[league]
-                
+
             retrieved_props = df_props['prop'].unique().tolist()
             missed_props = list(np.setdiff1d(all_props, retrieved_props))
             # update class var to flag for missing props
@@ -695,6 +684,7 @@ class actNetScraper:
                
                 tran.commit()
                 dbConnection.close()
+                print(league, oddsTableName, 'data loaded...')
             
             except Exception as e:
                 print(e)
