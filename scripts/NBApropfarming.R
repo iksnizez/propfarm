@@ -12,7 +12,7 @@ library(zoo) # rolling averages
 #RETICULATE_PYTHON="../propfarmVenv/Scripts/python"
 #library(reticulate) # running python script to get the odds scrape
 source("scripts/functions/NBAdatacrackers.R")
-source("scripts/functions/dbhelpers.R")
+source("scripts/functions/dbConnHelpers.R")
 
 ##################
 # Setting variables and hitting api

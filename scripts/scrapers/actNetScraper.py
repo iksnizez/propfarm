@@ -1,4 +1,4 @@
-import json, time, requests, pymysql, random
+import json, time, requests, random
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -606,7 +606,7 @@ class actNetScraper:
                 
 
             # final console output and checking for missed props
-            if len(specific_props > 0:  # TODO this is only build for the class initiated to a single date and league (used on missing props from the first run)
+            if len(specific_props) > 0:  # TODO this is only build for the class initiated to a single date and league (used on missing props from the first run)
                 all_props = specific_props
             else:
                 all_props = self.prop_names[league]
@@ -694,5 +694,31 @@ class actNetScraper:
     # TODO
     # check for missing props and scrape
     def tryMissingProps(self):
-        pass
+        """
+        check if class is flagged for scraping error and initiate another scrape and load
+        """
+        # check if class flagged for scraping error
+        if self.scrape_error_flag:
+            wait_secs = random.randint(1,5)
+
+            for k, v in self.scrape_errors.items():
+
+                if len(v['missing_props']) > 0:
+                    leagues_with_missing_props = [k]
+                    missing_props = v['missing_props']
+                    print('rescraping', k, 'for', missing_props)
+
+                    self.second_run = True
+
+                    self.scrape(
+                        sleep_secs = wait_secs, 
+                        specific_props = missing_props,
+                        leagues_override = leagues_with_missing_props
+                    )
+                    
+                    self.processScrapes(
+                        remove_dups = True,
+                        specific_props = missing_props
+                    )
+
             
