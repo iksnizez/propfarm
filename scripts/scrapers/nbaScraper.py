@@ -30,7 +30,7 @@ class scraper():
             
             #importing credentials from my txt file  
             # #TODO remove the hard coded path
-            with open('../../../Notes-General/config.txt', 'r') as f:
+            with open('../../../../Notes-General/config.txt', 'r') as f:
                 creds = f.read()
 
             creds = json.loads(creds)

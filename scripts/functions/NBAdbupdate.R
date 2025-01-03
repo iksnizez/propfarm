@@ -5,7 +5,7 @@ library(jsonlite)
 library(dplyr)
 library(dbx)
 library(stringr)
-source("scripts/functions/dbhelpers.R")
+source("scripts/functions/dbConnhelpers.R")
 source("scripts/functions/NBAdatacrackers.R")
 
 season <- "2024-25"
@@ -13,7 +13,7 @@ s <- 2025
 league <- 'nba'
 
 ################
-# update database - manually checks existing db for latest date and loads everything after it
+# UPDATE PBP DATABASE TABLE - manually checks existing db for latest date and loads everything after it
 ################
 ## PBP ##
 ## quit working 
@@ -77,7 +77,7 @@ currentNBA <- p %>%
             mutate(join.names = tolower(stringr::str_replace_all(DISPLAY_FIRST_LAST,suffix.rep))) %>%
             select(join.names, PERSON_ID)
 
-currenthoopR <- hoopR::load_nba_player_box(seasons = c(2024,2025)) %>%
+currenthoopR <- hoopR::load_nba_player_box(seasons = c(2020,2021, 2022, 2023, 2024,2025)) %>%
                     select(athlete_display_name, athlete_id, athlete_position_abbreviation) %>%
     mutate(join.names = tolower(stringr::str_replace_all(athlete_display_name,suffix.rep))) %>%
     distinct(athlete_id, .keep_all= TRUE)
@@ -116,6 +116,10 @@ datadump <- left_join(datadump, actnet, by="join.names") %>%
 
 # upsert
 dbx::dbxUpsert(conn, "players", datadump,  where_cols = c("joinName"))#, skip_existing = TRUE)
+
+# delete all records and insert fresh
+#dbxExecute(conn, 'TRUNCATE TABLE players;')
+#dbxInsert(conn, 'players', datadump)
 
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)

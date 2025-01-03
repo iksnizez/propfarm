@@ -22,7 +22,7 @@ class actNetScraper:
             leagues = None,
             database_export = False, 
             store_locally=True, 
-            config_path = '../../../Notes-General/config.txt',
+            config_path = '../../../../Notes-General/config.txt',
             second_run = False
         ):
         self.browser_path = browser_path
@@ -181,7 +181,7 @@ class actNetScraper:
 
     #############
     # general helper funcs
-    def get_pymysql_conn_str(self, league, config_path = '../../../Notes-General/config.txt'):
+    def get_pymysql_conn_str(self, league, config_path = '../../../../Notes-General/config.txt'):
         
         with open(config_path, 'r') as f:
             creds = f.read()
@@ -407,7 +407,7 @@ class actNetScraper:
                         html_target_element = parsed_html.find("div", {"id": "json"}).text
                     except:
                         missing_dates.append([prop, date, d])
-                        self.scrape_errors['missing_dates'] = [prop, date, d]
+                        self.scrape_errors[league]['missing_dates'] = [prop, date, d]
                         continue
                     
                     # convert the json string to a dictioanry

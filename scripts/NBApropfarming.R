@@ -30,38 +30,6 @@ search.date <- Sys.Date() + date_change
 ###########################
 
 #############
-# DEPRECATED - SCRAPE MOVED TO PYTHON
-# retrieve most recent basketball-reference player position estimate - using the players highest % as their POS assignment
-#############
-### >>>>>>>>>>>>>FUNCTION IN DATACRACKERS NEEDS TO BE UPDATED FOR PLAYERS MOVING, FILTER OUT OLD TEAMS
-## use custom function to retrieve basketball-reference position estimates
-#bref.pos.estimates <- players.played.position.estimate(s,search.date)
-#
-## add to playerIds and append to db
-#conn <- harvestDBconnect(league = league)
-#dbSendQuery(conn, "SET GLOBAL local_infile = true;")
-#
-## query to retrieve player id since roto doesn't have one
-#players.query <- 'SELECT joinName, actnetId actnetPlayerId, hooprId FROM players WHERE hooprId <> 932' # 2 brandon williams, 932 is from decades ago. filter out to remove dups when joining
-#playersdb <- dbGetQuery(conn, players.query) %>%
-#                mutate(
-#                    joinName = trimws(tolower(stringr::str_replace_all(joinName, suffix.rep)))
-#                ) 
-#
-## add actnetid to basketball ref estimates
-#bref.pos.estimates <- bref.pos.estimates %>% 
-#    left_join(playersdb, by = 'joinName')
-#
-#rm(playersdb)
-#
-#dbWriteTable(conn, name = "brefmisc", value= bref.pos.estimates, 
-#             row.names = FALSE, overwrite = FALSE, append = TRUE)
-#
-#dbSendQuery(conn, "SET GLOBAL local_infile = false;")
-#dbDisconnect(conn)
-#####
-
-#############
 # load basketball reference position assignments for players
 #############
 conn <- harvestDBconnect(league = league)
@@ -80,6 +48,10 @@ bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Scotty Pippen J
 bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Thomas Bryant' & team == 'MIA'))
 bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Dennis Schröder' & team == 'BRK'))
 bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Reece Beekman' & team == 'GSW'))
+bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == "D'Angelo Russell" & team == 'LAL'))
+bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Maxwell Lewis' & team == 'LAL'))
+bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Dorian Finney-Smith' & team == 'BRK'))
+bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Shake Milton' & team == 'BRK'))
 
 #return duplicated rows after players move teams
 bref_pos_manual_edits <- bref.pos.estimates[duplicated(bref.pos.estimates$player)|duplicated(bref.pos.estimates$player, fromLast = TRUE),]
@@ -88,7 +60,9 @@ if(nrow(bref_pos_manual_edits)>0){
 }
 ########
 
-
+#############
+# boxscore prepping
+#############
 # boxscore  will be used to access players that are playing today and agg stats
 boxscore.player <- load_nba_player_box(s) %>% 
                         filter(game_date < search.date & team_name != "All-Stars") %>% 
@@ -167,7 +141,7 @@ player.info <- hoopR::nba_commonallplayers(season=season, is_only_current_season
 # adding the additional IDs and team names to the nba_teams 
 # the default dataframe that loads with the package. using function from datacrackers.R
 ##nba_teams <- update.default.team.data()
-#####
+#######
 
 ##################
 # gathering teams and players playing today
@@ -251,110 +225,11 @@ betting.table <- dbGetQuery(conn, paste0(query, odds.date, "'")) %>%
             team == "GSW" ~ "GS",
             TRUE ~ team
         ))
-#####
-
-##########
-# ROTO DOESN"T ALLOW THE CSV DOWNLOADS FOR FREE ANYMORE
-##########
-# # get roto odds from saved file to fill in any missing from actn
-# roto <- read.csv(paste0('data\\',search.date, '_odds.csv')) %>%
-#     rename(prop = stat) %>% 
-#     mutate(
-#         prop = case_when(
-#             prop == 'PTS' ~ 'pts',
-#             prop == 'REB' ~ 'reb',
-#             prop == 'AST' ~ 'ast',
-#             prop == 'STL' ~ 'stl',
-#             prop == 'BLK' ~ 'blk',
-#             prop == 'PTSREBAST' ~ 'pra',
-#             prop == 'PTSREB' ~ 'pr',
-#             prop == 'PTSAST' ~ 'pa',
-#             prop == 'REBAST' ~ 'ra',
-#             prop == 'STLBLK' ~ 'sb',
-#             prop == 'THREES' ~ 'threes',
-#             prop == 'TURNOVERS' ~ 'to'
-#         ),
-#         PLAYER= trimws(tolower(stringr::str_replace_all(PLAYER, suffix.rep))),
-#         joinName = tolower(PLAYER)
-#     ) %>% 
-#     pivot_wider(names_from = prop,
-#                 values_from = c(line, oOdds, uOdds))
-# 
-# # list of players in roto but not actn
-# missing.actn <- setdiff(tolower(roto$PLAYER), betting.table$PLAYER)
-# 
-# #filter roto widen df to only missing actn players
-# roto <- roto %>% 
-#             filter(PLAYER %in% missing.actn)
-# 
-# # query to retrieve player id since roto doesn't have one
-# players.query <- 'SELECT joinName, actnetId actnetPlayerId, hooprId FROM players'
-# playersdb <- dbGetQuery(conn, players.query)
-# 
-# #roto doesn't have suffixes but everything else does. UGH!
-# # creating name column without suffixes to join with betting data until ID list is compiled
-# 
-# playersdb <- playersdb %>%
-#     mutate(
-#         joinName = trimws(tolower(stringr::str_replace_all(joinName, suffix.rep)))
-#     ) 
-# 
-# # add actnetid to roto
-# roto <- roto %>% 
-#             left_join(playersdb, by = 'joinName') #%>% select(-line_to, -oOdds_to, -uOdds_to)
-# 
-# rm(playersdb)
-# 
-# # Save missing prop types from actnet and remove from roto for the first bind with betting table
-# # the first bind adds the players that actnet was missing but roto had. after this bind
-# # a second bind will add the missing props from actnet with the roto data
-# missing.props <- setdiff(colnames(roto), colnames(betting.table))
-# roto <- roto %>% 
-#             select(-all_of(missing.props))
-# 
-# # adding any odds that actnet had that roto didn't so the dfs can be rbind
-# roto[,setdiff(colnames(betting.table), colnames(roto))] <- NA
-# 
-# #add roto to betting table
-# betting.table <- rbind(betting.table, roto)
-# rm(roto)
-# 
-# # adding in missing actnet props
-# roto <- read.csv(paste0('data\\',search.date, '_odds.csv')) %>%
-#     rename(prop = stat) %>% 
-#     mutate(
-#         prop = case_when(
-#             prop == 'PTS' ~ 'pts',
-#             prop == 'REB' ~ 'reb',
-#             prop == 'AST' ~ 'ast',
-#             prop == 'STL' ~ 'stl',
-#             prop == 'BLK' ~ 'blk',
-#             prop == 'PTSREBAST' ~ 'pra',
-#             prop == 'PTSREB' ~ 'pr',
-#             prop == 'PTSAST' ~ 'pa',
-#             prop == 'REBAST' ~ 'ra',
-#             prop == 'STLBLK' ~ 'sb',
-#             prop == 'THREES' ~ 'threes',
-#             prop == 'TURNOVERS' ~ 'to'
-#         ),
-#         PLAYER= trimws(tolower(stringr::str_replace_all(PLAYER, suffix.rep))),
-#         joinName = tolower(PLAYER)
-#     ) %>% 
-#     pivot_wider(names_from = prop,
-#                 values_from = c(line, oOdds, uOdds)) %>%
-#     select(joinName, missing.props)
-# 
-# betting.table <-  left_join(x = betting.table, y = roto, by=c('joinName'))
-# rm(roto)
-# 
-# #dbx::dbxUpdate(conn, "odds", betting.table, where_cols = c("game_id", "athlete_id", "date"))
-#####
 
 # close conns
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 
-#######
 # store the players from the harvest data that did not have any betting info
 missing.players.odds <- setdiff(stat.harvest$join.names, betting.table$PLAYER)
 missing.players.odds
@@ -556,6 +431,8 @@ dbx::dbxUpdate(conn, "props", yesterday.harvest, where_cols = c("game_id", "athl
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 #####
+
+
 
 # final data output
 #write.csv(x = stat.harvest,file =  harvest.file.path, row.names=FALSE)
