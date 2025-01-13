@@ -216,7 +216,7 @@ class scraper():
                 temp.loc[:,'scoreFreqRank'] = temp.loc[:,'SCORE_POSS_PCT'].rank(ascending=False)
                 ranked = pd.concat([ranked, temp])
 
-        ranked.loc[:,'date'] = self.meta_data['today']
+        ranked.loc[:,'date'] = self.meta_data['today_dt']
 
 
         #saving data
@@ -238,11 +238,12 @@ class scraper():
 
     def get_nba_team_shotzone_data(            
             self,
-            base_url = 'https://www.nba.com/stats/teams/{sideOfBall}?DistanceRange=By+Zone&LastNGames={lastNgames}&SeasonType={type}', 
+            base_url = 'https://www.nba.com/stats/teams/{sideOfBall}?DistanceRange=By+Zone&LastNGames={lastNgames}&SeasonType={type}&DateTo={endDate}', 
             sides = {'offensive':'shooting', 'defensive':'opponent-shooting'},
             season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
             lastNgames = 10,
-            database_table = 'statsteamshotzones'
+            database_table = 'statsteamshotzones',
+            endDate = None
     ):
         """
         function to scrape nba.com team shot zone stats on both sides of the ball
@@ -279,8 +280,13 @@ class scraper():
         data = []
         url_errors = []
 
+        if pd.isnull(endDate):
+            endDate_url = self.meta_data['today_dt'].strftime('%m/%d/%Y')
+        else:
+            endDate_url = endDate.strftime('%m/%d/%Y')
+
         for s, v in sides.items():       
-            url = base_url.format(sideOfBall=v, lastNgames=lastNgames, type=season_type)
+            url = base_url.format(sideOfBall=v, lastNgames=lastNgames, type=season_type, endDate = endDate_url)
             #url = "https://www.nba.com/stats/teams/shooting?DistanceRange=By+Zone&SeasonType=Playoffs&DateFrom=04%2F29%2F2024&DateTo=05%2F08%2F2024"
             #url = "https://www.nba.com/stats/teams/opponent-shooting?DistanceRange=By+Zone&SeasonType=Playoffs&DateFrom=04%2F29%2F2024&DateTo=05%2F08%2F2024"
             
@@ -331,7 +337,7 @@ class scraper():
         dfZoneShooting.loc[:,'paintAllFga'] =  dfZoneShooting['paintRaFga'] + dfZoneShooting['paintNoRaFga']
         dfZoneShooting.loc[:,'paintAllFgPct'] =  round((dfZoneShooting['paintAllFgm'] / dfZoneShooting['paintAllFga']) * 100,3)
 
-        dfZoneShooting.loc[:,'date'] = self.meta_data['today']
+        dfZoneShooting.loc[:,'date'] = endDate
 
         #save data
         #dfZoneShooting.to_csv('../data/' + today + '_teamShotZones.csv', index=False)
@@ -497,7 +503,7 @@ class scraper():
             temp.loc[:,'freqRank'] = temp.loc[:,'POSS_PCT'].rank(ascending=False)
             ranked = pd.concat([ranked, temp])
 
-        ranked.loc[:,'date'] = today
+        ranked.loc[:,'date'] = self.meta_data['today_dt']
 
         #save data
         #ranked.to_csv('../data/' + today + '_playerPlayTypes.csv', index=False)
@@ -518,10 +524,11 @@ class scraper():
 
     def get_nba_player_shotzone_data(            
             self,
-            base_url = 'https://www.nba.com/stats/players/shooting?DistanceRange=By+Zone&LastNGames={lastNgames}&SeasonType={type}', 
+            base_url = 'https://www.nba.com/stats/players/shooting?DistanceRange=By+Zone&LastNGames={lastNgames}&SeasonType={type}&DateTo={endDate}', 
             season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
             lastNgames = 10,
-            database_table = 'statsplayershotzones'
+            database_table = 'statsplayershotzones',
+            endDate = None
     ):
         """
         function to scrape nba.com player shot zone stats on offense
@@ -557,12 +564,17 @@ class scraper():
         url_errors = []
         today = self.meta_data['today']
 
+        if pd.isnull(endDate):
+            endDate_url = self.meta_data['today_dt'].strftime('%m/%d/%Y')
+        else:
+            endDate_url = endDate.strftime('%m/%d/%Y')
+
         driver = self.open_browser()
 
         # get html page source data
-        url = base_url.format(lastNgames = lastNgames, type = season_type)
+        url = base_url.format(lastNgames = lastNgames, type = season_type, endDate = endDate_url)
         driver.get(url)
-        time.sleep(3)
+        time.sleep(2)
 
         ## need to open page then change filter from 1 to -1 so that all players load
         ## div class="Crom_cromSettings__ak6Hd"  > 
@@ -632,7 +644,7 @@ class scraper():
         dfpZoneShooting.loc[:,'paintAllFga'] =  dfpZoneShooting['paintRaFga'] + dfpZoneShooting['paintNoRaFga']
         dfpZoneShooting.loc[:,'paintAllFgPct'] =  round((dfpZoneShooting['paintAllFgm'] / dfpZoneShooting['paintAllFga']) * 100,3)
 
-        dfpZoneShooting.loc[:,'date'] = today
+        dfpZoneShooting.loc[:,'date'] = endDate
         
         #save data
         #dfpZoneShooting.to_csv('../data/' + today + '_playerShotZones.csv', index=False)

@@ -23,7 +23,7 @@ class actNetScraper:
             database_export = False, 
             store_locally=True, 
             config_path = '../../../../Notes-General/config.txt',
-            second_run = False
+            second_run = False,
         ):
         self.browser_path = browser_path
         self.database_export = database_export
@@ -48,12 +48,14 @@ class actNetScraper:
             'wnba':[43,41,35,31],
             'nfl':[401, 338, 336, 334, 407, 11, 7, 23, 21, 19, 403, 25, 15, 13, 405]
         }
+        # bookid url params removed - bookIds=69,75,68,123,71,32,76,79,369,1599,1533,1900&
+        # stateCode url param removed - stateCode={st}
         self.urls = {
-            'nba':'https://api.{site}.com/web/v1/leagues/4/props/{proptype}?bookIds=69,75,68,123,71,32,76,79,369,1599,1533,1900&date={date}',
-            'mlb':'https://api.{site}.com/web/v1/leagues/8/props/{proptype}?bookIds=69,75,68,123,71,32,76,79,369,1599,1533,1900&date={date}',
-            'nhl':'https://api.{site}.com/web/v1/leagues/3/props/{proptype}?bookIds=69,75,68,123,71,32,76,79,369,1599,1533,1900&date={date}',
-            'wnba':'https://api.{site}.com/web/v1/leagues/5/props/{proptype}?bookIds=69,75,68,123,71,32,76,79,369,1599,1533,1900&date={date}',
-            'nfl':'https://api.{site}.com/web/v1/leagues/1/props/{proptype}?bookIds=69,75,68,123,71,32,76,79,369,1599,1533,1900&date={date}'
+            'nba':'https://api.{site}.com/web/v1/leagues/4/props/{proptype}?date={date}',
+            'mlb':'https://api.{site}.com/web/v1/leagues/8/props/{proptype}?date={date}',
+            'nhl':'https://api.{site}.com/web/v1/leagues/3/props/{proptype}?date={date}',
+            'wnba':'https://api.{site}.com/web/v1/leagues/5/props/{proptype}?date={date}',
+            'nfl':'https://api.{site}.com/web/v1/leagues/1/props/{proptype}?date={date}'
         }
         self.map_option_ids = {
             'nba':{
@@ -109,7 +111,6 @@ class actNetScraper:
                 'core_bet_type_67_to_score_2_or_more_touchdowns':{'o':None, 'u':None, 'type':'tdTwo', 'html_str_responses':[], 'id':2829},
                 'core_bet_type_68_to_score_3_or_more_touchdowns':{'o':None, 'u':None, 'type':'tdThree', 'html_str_responses':[], 'id':2830},
                 'core_bet_type_56_first_touchdown_scorer':{'o':None, 'u':None, 'type':'tdFirst', 'html_str_responses':[], 'id':1936},
-                'core_bet_type_65_interceptions':{'o':400, 'u':401, 'type':'int', 'html_str_responses':[], 'id':2827},
                 'core_bet_type_60_longest_completion':{'o':337, 'u':338, 'type':'passLong', 'html_str_responses':[], 'id':1940},
                 'core_bet_type_59_longest_reception':{'o':335, 'u':336, 'type':'recLong', 'html_str_responses':[], 'id':1939},
                 'core_bet_type_58_longest_rush':{'o':333, 'u':334, 'type':'rushLong', 'html_str_responses':[], 'id':1938},
@@ -123,7 +124,8 @@ class actNetScraper:
                 'core_bet_type_18_rushing_attempts':{'o':24, 'u':25, 'type':'rushAtt', 'html_str_responses':[], 'id':370},
                 'core_bet_type_13_rushing_tds':{'o':14, 'u':15, 'type':'rushTds', 'html_str_responses':[], 'id':365},
                 'core_bet_type_12_rushing_yards':{'o':12, 'u':13, 'type':'rushYds', 'html_str_responses':[], 'id':364},
-                'core_bet_type_70_tackles_assists':{'o':404, 'u':405, 'type':'tackles', 'html_str_responses':[], 'id':2893}
+                'core_bet_type_70_tackles_assists':{'o':404, 'u':405, 'type':'tackles', 'html_str_responses':[], 'id':2893},
+                'core_bet_type_65_interceptions':{'o':400, 'u':401, 'type':'int', 'html_str_responses':[], 'id':2827}
                 # pass atm
                 # pass comp
                 # pat
@@ -301,7 +303,7 @@ class actNetScraper:
     # site scraper
 
     # scrape website for dates and league
-    def scrape(self, sleep_secs = 2, specific_props=[], leagues_override = None):
+    def scrape(self, sleep_secs = 2, specific_props=[], leagues_override = None, an_state_code = 'LV'):
         
         if leagues_override == None:
             # stop the scraper if there are no league games today to avoid hitting the server
@@ -350,6 +352,8 @@ class actNetScraper:
                         try:
                             site = self.urls[league].format(site='actionnetwork', proptype= pt, date= frmt_date)
                             driver.get(site)
+                            time.sleep(sleep_secs)
+                            
                         except:
                             failed.append(d)
 
@@ -357,7 +361,7 @@ class actNetScraper:
                         response = driver.page_source
                         self.map_option_ids[league][pt]['html_str_responses'].append(response)
 
-                        time.sleep(sleep_secs)
+                        
 
             except Exception as e:
 
