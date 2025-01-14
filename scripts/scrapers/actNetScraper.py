@@ -49,6 +49,7 @@ class actNetScraper:
             'nfl':[401, 338, 336, 334, 407, 11, 7, 23, 21, 19, 403, 25, 15, 13, 405]
         }
         # bookid url params removed - bookIds=69,75,68,123,71,32,76,79,369,1599,1533,1900&
+        # book ids 15:consenus, 369:mgm, 3585:cesaers
         # stateCode url param removed - stateCode={st}
         self.urls = {
             'nba':'https://api.{site}.com/web/v1/leagues/4/props/{proptype}?date={date}',
@@ -176,7 +177,7 @@ class actNetScraper:
         self.run_date_str = datetime.today().strftime('%Y-%m-%d')
 
         # TODO this doesn't really handle when multiple dates are initiated. only good for a single date
-        if self.second_run: #skips the game checks when they have already been checked
+        if (self.second_run) or leagues != None: #skips the game checks when they have already been checked
             self.leagues  = leagues
         else: # first run check for games
             self.leagues = self.check_for_league_games(date_check = datetime.today().strftime('%Y-%m-%d'), league_check_list = leagues)
@@ -203,6 +204,7 @@ class actNetScraper:
         
         service = Service(browser_path)
         driver = webdriver.Firefox(service=service)
+        driver.set_page_load_timeout(retry_delay)
 
         # start browser
         return driver
@@ -352,15 +354,22 @@ class actNetScraper:
                         try:
                             site = self.urls[league].format(site='actionnetwork', proptype= pt, date= frmt_date)
                             driver.get(site)
-                            time.sleep(sleep_secs)
+                            
                             
                         except:
                             failed.append(d)
 
                         #getting the site page_source data and adding it to the dictionary for storage
                         response = driver.page_source
+                        
                         self.map_option_ids[league][pt]['html_str_responses'].append(response)
 
+                        ########################################
+                        ############ THIS HAS TO BE HERE. I DONT KNOW WHY BUT IT ALLOWS FOR API TO PASS THE DATA
+                        ############ I THINK IF IT GOES BEFORE THE PAGE_SOURCE IT ALLOWS A JAVASCRIPT TO FIRE HIDING THE DATA??
+                        ########################################
+                        time.sleep(sleep_secs)
+                        ##########################################
                         
 
             except Exception as e:
@@ -372,9 +381,21 @@ class actNetScraper:
         return      
 
     # process html
-    def processScrapes(self, remove_dups = True, specific_props = []):
+    def processScrapes(self, leagues_override = None, remove_dups = True, specific_props = []):
         
-        for league in self.leagues:
+        if leagues_override == None:
+            # stop the scraper if there are no league games today to avoid hitting the server
+            if len(self.leagues) == 0:
+                print('no league games today')
+                return
+            else:
+                looper = self.leagues
+
+        else:
+            looper = leagues_override
+
+
+        for league in looper:
             print('scraping', league, '...')
             league = league.lower()
             missing_dates = []
@@ -418,22 +439,24 @@ class actNetScraper:
                     json_single_date = json.loads(html_target_element)
 
                     #checking if there are multiple books odds provided or none
+                    #IT LOOKS LIKE THEY REMOVED statusCode sometime between 1/6/25 and 1/13/25
                     if json_single_date.get("statusCode") is not None:
                             continue
                     # if there are no markets for the prop then add it to the missing prop list
                     elif len(json_single_date['markets']) == 0: 
-                        
+                    ##if len(json_single_date['markets']) == 0:    
                         continue
                     else:
                         
                         books = json_single_date['markets'][0]['books']
                         book_count = len(books)
                     
-                    # if multiple books, use 369
+                    # if multiple books, use 15, which is the consensus odds
+                    # else, default to the first book in the data
                     book = 0
                     if book_count > 1:
                         for b in range(0,len(books)):
-                            if books[b]['book_id'] == 15: #369? 1599 DK? 1533 MGM?
+                            if books[b]['book_id'] == 15:
                                 book = b
                             else:    
                                 continue
@@ -441,112 +464,114 @@ class actNetScraper:
                     # looping through all of the props for a single type and single day
                     for j in json_single_date['markets'][0]['books'][book]['odds']:
 
-                            #props_single_date = []
-                            entry = [np.nan] * (len(columns) - 1)
+                        #props_single_date = []
+                        entry = [np.nan] * (len(columns) - 1)
 
-                            # check for odds for the prop on the date
-                            if j.get("statusCode") is not None:
-                                continue
+                        # check for odds for the prop on the date
+                        #IT LOOKS LIKE THEY REMOVED statusCode sometime between 1/6/25 and 1/13/25
+                        if j.get("statusCode") is not None:
+                            continue
+                        else:
+                            playerId = j['player_id']
+
+                        # actnet propId are not unique in MLB or NHL, creating own propId later
+                        actNetPropId = j['prop_id']
+
+                        ## creating custom propId
+                        # random number doesn't work because the random num changes when having to combine over and under
+                        #propId = int(str(j['prop_id']) + str(random.random())[2:6])
+                        propId = int(str(j['prop_id']) + str(playerId))
+                                    
+                        ou_check = j['option_type_id']
+
+                        # if the player is not in this dict, it will be added. if it is in then
+                        # only the odds that are not present will be added
+                        if all_props_single_type.get(propId) is None:
+                            
+                            entry[0] = playerId
+                            entry[1] = j['team_id']
+                            entry[2] = j['game_id']
+                            entry[3] = date
+                            entry[4] = prop
+                            entry[5] = j['value']  # line
+                            entry[17] = actNetPropId # actnetpropId
+                            
+                            #the null value from json comes through strange into pandas, forcing nan
+                            if pd.isnull(j['projected_value']):
+                                entry[8] = np.nan
                             else:
-                                playerId = j['player_id']
-
-                                # actnet propId are not unique in MLB or NHL, creating own propId later
-                                actNetPropId = j['prop_id']
-
-                                ## creating custom propId
-                                # random number doesn't work because the random num changes when having to combine over and under
-                                #propId = int(str(j['prop_id']) + str(random.random())[2:6])
-                                propId = int(str(j['prop_id']) + str(playerId))
+                                entry[8] = j['projected_value']
                                             
-                                ou_check = j['option_type_id']
-
-                                # if the player is not in this dict, it will be added. if it is in then
-                                # only the odds that are not present will be added
-                                if all_props_single_type.get(propId) is None:
-                                    
-                                    entry[0] = playerId
-                                    entry[1] = j['team_id']
-                                    entry[2] = j['game_id']
-                                    entry[3] = date
-                                    entry[4] = prop
-                                    entry[5] = j['value']  # line
-                                    entry[17] = actNetPropId # actnetpropId
-                                    
-                                    #the null value from json comes through strange into pandas, forcing nan
-                                    if pd.isnull(j['projected_value']):
-                                        entry[8] = np.nan
-                                    else:
-                                        entry[8] = j['projected_value']
-                                                    
-                                    #overs and props that don't have over/under designated
-                                    if ou_check in self.over_ids[league] or ou_check not in self.under_ids[league]:
-                                        entry[6] = j['money'] # over odds
-                                    
-                                        #the null value from json comes through strange into pandas, forcing nan
-                                        if pd.isnull(j['bet_quality'])   :
-                                            entry[11] = np.nan
-                                        else:
-                                            entry[11] = j['bet_quality']
-                                            
-                                        # data point only available in the more recent games
-                                        if j.get('implied_value') is not None:
-                                            entry[9] = j['implied_value']
-                                            entry[10] = j['edge']
-                                            entry[12] = j['grade']
-                                            
-                                    #unders
-                                    else:
-                                        entry[7] = j['money'] # under odds
-                                    
-                                        #the null value from json comes through strange into pandas, forcing nan
-                                        if pd.isnull(j['bet_quality'])   :
-                                            entry[15] = np.nan
-                                        else:
-                                            entry[15] = j['bet_quality']
-
-                                        # data point only available in the more recent games
-                                        if j.get('implied_value') is not None:
-                                            entry[13] = j['implied_value']
-                                            entry[14] = j['edge']
-                                            entry[16] = j['grade']
-
-                                    # loading over and under data to the prop id
-                                    all_props_single_type[propId] = entry
-                                
-                                # adding the over or under to the existing propId key
+                            #overs and props that don't have over/under designated
+                            if ou_check in self.over_ids[league] or ou_check not in self.under_ids[league]:
+                                entry[6] = j['money'] # over odds
+                            
+                                #the null value from json comes through strange into pandas, forcing nan
+                                if pd.isnull(j['bet_quality'])   :
+                                    entry[11] = np.nan
                                 else:
-                                    #overs
-                                    if ou_check in self.over_ids[league] or ou_check not in self.under_ids[league]:
-                                        all_props_single_type[propId][6] = j['money'] # over odds
+                                    entry[11] = j['bet_quality']
                                     
-                                        #the null value from json comes through strange into pandas, forcing nan
-                                        if pd.isnull(j['bet_quality'])   :
-                                            all_props_single_type[propId][11] = np.nan
-                                        else:
-                                            all_props_single_type[propId][11] = j['bet_quality']
-                                            
-                                        # data point only available in the more recent games
-                                        if j.get('implied_value') is not None:
-                                            all_props_single_type[propId][9] = j['implied_value']
-                                            all_props_single_type[propId][10] = j['edge']
-                                            all_props_single_type[propId][12] = j['grade']
-                                            
-
-                                    #unders
-                                    else:
-                                        all_props_single_type[propId][7] = j['money'] # under odds
+                                # data point only available in the more recent games
+                                if j.get('implied_value') is not None:
+                                    entry[9] = j['implied_value']
+                                    entry[10] = j['edge']
+                                    entry[12] = j['grade']
                                     
-                                        #the null value from json comes through strange into pandas, forcing nan
-                                        if pd.isnull(j['bet_quality'])   :
-                                            all_props_single_type[propId][15] = np.nan
-                                        else:
-                                            all_props_single_type[propId][15] = j['bet_quality']
+                            #unders
+                            else:
+                                entry[7] = j['money'] # under odds
+                            
+                                #the null value from json comes through strange into pandas, forcing nan
+                                if pd.isnull(j['bet_quality'])   :
+                                    entry[15] = np.nan
+                                else:
+                                    entry[15] = j['bet_quality']
 
-                                        # data point only available in the more recent games
-                                        if j.get('implied_value') is not None:
-                                            all_props_single_type[propId][13] = j['implied_value']
-                                            all_props_single_type[propId][14] = j['edge']
-                                            all_props_single_type[propId][16] = j['grade']              
+                                # data point only available in the more recent games
+                                if j.get('implied_value') is not None:
+                                    entry[13] = j['implied_value']
+                                    entry[14] = j['edge']
+                                    entry[16] = j['grade']
+
+                            # loading over and under data to the prop id
+                            all_props_single_type[propId] = entry
+                        
+                        # adding the over or under to the existing propId key
+                        else:
+                            #overs
+                            if ou_check in self.over_ids[league] or ou_check not in self.under_ids[league]:
+                                all_props_single_type[propId][6] = j['money'] # over odds
+                            
+                                #the null value from json comes through strange into pandas, forcing nan
+                                if pd.isnull(j['bet_quality'])   :
+                                    all_props_single_type[propId][11] = np.nan
+                                else:
+                                    all_props_single_type[propId][11] = j['bet_quality']
+                                    
+                                # data point only available in the more recent games
+                                if j.get('implied_value') is not None:
+                                    all_props_single_type[propId][9] = j['implied_value']
+                                    all_props_single_type[propId][10] = j['edge']
+                                    all_props_single_type[propId][12] = j['grade']
+                                    
+
+                            #unders
+                            else:
+                                all_props_single_type[propId][7] = j['money'] # under odds
+                            
+                                #the null value from json comes through strange into pandas, forcing nan
+                                if pd.isnull(j['bet_quality'])   :
+                                    all_props_single_type[propId][15] = np.nan
+                                else:
+                                    all_props_single_type[propId][15] = j['bet_quality']
+
+                                # data point only available in the more recent games
+                                if j.get('implied_value') is not None:
+                                    all_props_single_type[propId][13] = j['implied_value']
+                                    all_props_single_type[propId][14] = j['edge']
+                                    all_props_single_type[propId][16] = j['grade'] 
+                                       
                     try:
                         # gather player names
                         players = json_single_date['markets'][0]['players']

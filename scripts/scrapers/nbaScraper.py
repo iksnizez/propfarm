@@ -50,7 +50,7 @@ class scraper():
 
         # meta data - run date, etc.. 
         self.meta_data = {
-            'today_dt':datetime.today(),
+            'today_dt':datetime.today().date(),
             'today':datetime.today().strftime('%Y-%m-%d')
         }
 
