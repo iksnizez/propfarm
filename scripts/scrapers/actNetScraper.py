@@ -52,11 +52,11 @@ class actNetScraper:
         # book ids 15:consenus, 369:mgm, 3585:cesaers
         # stateCode url param removed - stateCode={st}
         self.urls = {
-            'nba':'https://api.{site}.com/web/v1/leagues/4/props/{proptype}?date={date}',
-            'mlb':'https://api.{site}.com/web/v1/leagues/8/props/{proptype}?date={date}',
-            'nhl':'https://api.{site}.com/web/v1/leagues/3/props/{proptype}?date={date}',
-            'wnba':'https://api.{site}.com/web/v1/leagues/5/props/{proptype}?date={date}',
-            'nfl':'https://api.{site}.com/web/v1/leagues/1/props/{proptype}?date={date}'
+            'nba':'https://api.{site}.com/web/v1/leagues/4/props/{proptype}?bookIds=15,369&date={date}',
+            'mlb':'https://api.{site}.com/web/v1/leagues/8/props/{proptype}?bookIds=15,369&date={date}',
+            'nhl':'https://api.{site}.com/web/v1/leagues/3/props/{proptype}?bookIds=15,369&date={date}',
+            'wnba':'https://api.{site}.com/web/v1/leagues/5/props/{proptype}?bookIds=15,369&date={date}',
+            'nfl':'https://api.{site}.com/web/v1/leagues/1/props/{proptype}?bookIds=15,369&date={date}'
         }
         self.map_option_ids = {
             'nba':{
@@ -353,14 +353,25 @@ class actNetScraper:
                         # path to webdriver for selenium
                         try:
                             site = self.urls[league].format(site='actionnetwork', proptype= pt, date= frmt_date)
-                            driver.get(site)
-                            
+                            driver.get(site)                            
                             
                         except:
                             failed.append(d)
 
                         #getting the site page_source data and adding it to the dictionary for storage
                         response = driver.page_source
+                        
+                        # check for 504 Gateway error - their server times out.
+                        retry_count = 0
+                        while retry_count < 5:
+                            if '504 Gateway Time-out' in response:
+                                driver.refresh()
+                                response = driver.page_source
+                                retry_count += 1
+                                time.sleep(2)
+                            else:
+                                break
+
                         
                         self.map_option_ids[league][pt]['html_str_responses'].append(response)
 
