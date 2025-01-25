@@ -41,17 +41,48 @@ bref.pos.estimates <-  dbGetQuery(conn, query.pos.ests)
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 
-bref.pos.estimates <- bref.pos.estimates %>% distinct()
+bref.pos.estimates <- bref.pos.estimates %>% 
+    distinct() %>% 
+    mutate(team = case_when(
+        team == "BRK" ~ "BKN",
+        team == "CHO" ~ "CHA",
+        team == "PHO" ~ "PHX",
+        TRUE ~ team
+    )) %>% 
+    mutate(nbaId=as.character(nbaId))
 
 ##### FILTER FOR TRADES AND SIGNINGS  Basketball ref doesn't remove players from old teams
-bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Scotty Pippen Jr.' & is.na(actnetPlayerId)))
-bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Thomas Bryant' & team == 'MIA'))
-bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Dennis Schröder' & team == 'BRK'))
-bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Reece Beekman' & team == 'GSW'))
-bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == "D'Angelo Russell" & team == 'LAL'))
-bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Maxwell Lewis' & team == 'LAL'))
-bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Dorian Finney-Smith' & team == 'BRK'))
-bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Shake Milton' & team == 'BRK'))
+#bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Scotty Pippen Jr.' & is.na(actnetPlayerId)))
+#bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Thomas Bryant' & team == 'MIA'))
+#bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Dennis Schröder' & team == 'BRK'))
+#bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Reece Beekman' & team == 'GSW'))
+#bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == "D'Angelo Russell" & team == 'LAL'))
+#bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Maxwell Lewis' & team == 'LAL'))
+#bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Dorian Finney-Smith' & team == 'BRK'))
+#bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Shake Milton' & team == 'BRK'))
+#bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Tristen Newton' & team == 'IND'))
+#bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Nick Richards' & team == 'CHO'))
+#bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Trey Jemison' & team == 'NOP'))
+#bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Orlando Robinson' & team == 'SAC'))
+#bref.pos.estimates <- bref.pos.estimates %>% filter(!(player == 'Josh Okogie' & team == 'PHO'))
+
+# used to clean up the bref import since they don't remove players from old teams during the season 
+current_rosters <- hoopR::nba_commonallplayers()$CommonAllPlayers %>% 
+    filter(ROSTERSTATUS == 1) %>% 
+    select(
+        PERSON_ID, TEAM_ABBREVIATION
+    ) %>% 
+    rename(
+        'team' = 'TEAM_ABBREVIATION',
+        'nbaId' = 'PERSON_ID'
+    )
+# removing players from their old teams
+bref.pos.estimates <- bref.pos.estimates %>% 
+    right_join(
+        current_rosters, 
+        by = c('team', 'nbaId')
+    ) %>% 
+    drop_na(player)
 
 #return duplicated rows after players move teams
 bref_pos_manual_edits <- bref.pos.estimates[duplicated(bref.pos.estimates$player)|duplicated(bref.pos.estimates$player, fromLast = TRUE),]
@@ -431,74 +462,6 @@ dbx::dbxUpdate(conn, "props", yesterday.harvest, where_cols = c("game_id", "athl
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")
 dbDisconnect(conn)
 #####
-
-
-
-# final data output
-#write.csv(x = stat.harvest,file =  harvest.file.path, row.names=FALSE)
-#write.csv(x = yesterday.harvest,file =  "output/dbBackup.csv", row.names=FALSE)
-
-
-##################
-# flag players who have seen large jump in minutes
-##################
-minutes.boosted <- stat.harvest %>% 
-    mutate(minL3diff = minAvgL3 - minAvg - (minstd * 1.2),
-           minL10diff = minAvgL10 - minAvg - minstd,
-           direction =case_when(
-               (minL3diff > 0 & minL10diff > 0) ~ "up-ramped",
-               (minL3diff > 0 & minL10diff < 0) ~ "up-ramping",
-               (minL3diff < 0 & minL10diff > 0) ~ "down-ramping",
-               (minL3diff < 0 & minL10diff < 0) ~ "down-ramped",
-               TRUE ~ "flat"
-           )) %>%
-    filter(minL3diff > 0 | minL10diff > 0) %>%
-    select(athlete_id,  athlete_display_name, athlete_position_abbreviation, team_abbreviation, 
-           direction, minAvg,minAvgL3, minAvgL10, minstd, minL3diff, minL10diff) %>%
-    arrange(direction)
-View(minutes.boosted %>% arrange(desc(direction)))
-#####
-
-##################
-# updating team records and ats records
-##################
-#updating pbp to be able to calculate all teams ATS records
-finals <- nba_pbp %>% filter(type_text == "End Game") %>% 
-    mutate(
-        homeWin = ifelse(home_score > away_score,1,0),
-        awayWin = ifelse(away_score > home_score,1,0),
-        homeATSw= ifelse((home_score + game_spread) > away_score, 1,0),
-        awayATSw = ifelse((away_score + home_team_spread) > home_score, 1,0),
-        pushATS = ifelse((away_score + home_team_spread) == home_score, 1,0)
-    )
-
-# calculating records and ats records for every team
-teams = unique(c(finals$away_team_abbrev, finals$home_team_abbrev))
-team.records <- data.frame(team=character(), w=integer(), l=integer(), 
-                           wATS=integer(), lATS=integer(), tATS=integer())
-
-for (team in teams) {
-    team.results <- finals %>% 
-        filter(away_team_abbrev == team | home_team_abbrev == team) %>%
-        mutate(teamWin= ifelse((away_team_abbrev == team & awayWin == 1) |(home_team_abbrev == team & homeWin == 1),  
-                               1, 0),
-               teamATSwin= ifelse((away_team_abbrev == team & awayATSw== 1) |(home_team_abbrev == team & homeATSw == 1),  
-                                  1, 0)
-        )
-    
-    record <- list(team, sum(team.results$teamWin), # wins
-                   nrow(team.results) - sum(team.results$teamWin), # losses
-                   sum(team.results$teamATSwin), # wins ATS
-                   nrow(team.results) - sum(team.results$teamATSwin) - sum(team.results$pushATS), #losses ATS
-                   sum(team.results$pushATS) # pushes
-    )
-    
-    team.records <- rbind(team.records, setNames(record, names(team.records)))
-    
-}
-team.records %>% arrange(team) %>% select(team, wATS, lATS, tATS)
-#####
-
 
 ##################
 # 

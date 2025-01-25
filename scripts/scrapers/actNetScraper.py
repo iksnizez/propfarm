@@ -365,10 +365,14 @@ class actNetScraper:
                         retry_count = 0
                         while retry_count < 5:
                             if '504 Gateway Time-out' in response:
-                                driver.refresh()
+                                #driver.refresh()
+                                driver.close()
+                                site = self.urls[league].format(site='actionnetwork', proptype= pt, date= frmt_date)
+                                driver = self.open_browser(browser_path = self.browser_path, retry_delay = 5, retry_attempts = 3)
+                                driver.get(site)    
                                 response = driver.page_source
                                 retry_count += 1
-                                time.sleep(2)
+                                time.sleep(sleep_secs)
                             else:
                                 break
 
