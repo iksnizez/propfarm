@@ -35,7 +35,7 @@ search.date <- Sys.Date() + date_change
 conn <- harvestDBconnect(league = league)
 dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 
-query.pos.ests <- paste("SELECT b.player, b.pos, b.team, p.actnetId actnetPlayerId, p.hooprId FROM brefmisc b LEFT JOIN players p ON b.joinName = p.joinName WHERE date = '", search.date, "';", sep="")
+query.pos.ests <- paste("SELECT b.player, b.pos, b.team, p.actnetId actnetPlayerId, p.hooprId, p.nbaId FROM brefmisc b LEFT JOIN players p ON b.joinName = p.joinName WHERE date = '", search.date, "';", sep="")
 bref.pos.estimates <-  dbGetQuery(conn, query.pos.ests)
 
 dbSendQuery(conn, "SET GLOBAL local_infile = false;")

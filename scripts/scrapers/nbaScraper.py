@@ -356,6 +356,122 @@ class scraper():
         print('nba team shot zone scraped...')
         return
 
+    def get_nba_team_stats(
+            self,
+            base_url = 'https://www.nba.com/stats/teams/{stats}?SeasonType={seasonType}',
+            stats = ['traditional', 'advanced', 'opponent'],
+            season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
+            lastNgames = 0,
+            database_table = 'statsteam',
+            endDate = None
+    ):
+         # add table to class storage dictionaries
+        self.gen_self_dict_entry(database_table)
+
+        lastNgames = str(lastNgames)
+
+        driver = self.open_browser()
+        # scrapes from 3 urls with 3 different tables, this will store them until joined into one
+        data = {'traditional':[],'advanced':[],'opponent':[]}
+        url_errors = []
+
+        #col names
+        cols = {
+        'traditional':[
+                'idx', 'team', 'gp', 'w', 'l', 'winPct', 'min', 'pts', 'fgm', 'fga', 'fgPct', '3pm',	'3pa', '3pPct',	'ftm', 'fta',
+                'ftPct', 'oreb', 'dreb', 'reb', 'ast', 'to', 'stl', 'blk', 'blka', 'pf', 'pfd', 'plusMinus', 'tid'
+        ],
+        'advanced':[
+                'idx', 'team', 'gp', 'w', 'l', 'min', 'offrtg', 'defrtg', 'netrtg', 'astPct', 'astToRatio', 'astRatio', 
+                'orebPct', 'drebPct', 'rebPct', 'toPct', 'efgPct', 'tsPct', 'pace', 'pie', 'poss', 'tid'
+        ],
+        'opponent':[
+                'idx', 'team', 'gp', 'w', 'l', 'min', 'oppFgm', 'oppFga', 'oppfgPct','opp3pm','opp3pa','opp3pPct',
+                'oppFtm', 'oppFta', 'oppFtPct', 'oppOreb', 'oppDreb', 'oppReb', 'oppAst', 'oppTo','oppStl', 'oppBlk',
+                'oppBlka', 'oppPf','oppPfd', 'oppPts', 'oppPlusMinsus', 'tid'
+        ]
+        }
+
+        if pd.isnull(endDate):
+            endDate_url = self.meta_data['today_dt'].strftime('%m/%d/%Y')
+        else:
+            endDate_url = endDate.strftime('%m/%d/%Y')
+
+        for s in stats:       
+            url = base_url.format(stats=s, seasonType=season_type)
+
+            # get html page source data
+            driver.get(url)
+            time.sleep(3)
+            ps = driver.page_source
+            soup = bs(ps)
+            
+            try:
+                # extract table holding the data
+                tables = soup.find_all('table')
+                table = tables[-1]
+                
+                # pull out data from the body
+                #data = []
+                rows = table.find('tbody').find_all('tr')
+                for i in rows:
+                    row = []
+                    rowData = i.find_all('td')
+                    
+                    try:
+                        tid = i.find('a').get_attribute_list('href')
+                    except:
+                        tid = None
+                    
+                    for j in rowData:
+                        # convert number strings to numeric 
+                        try:
+                            row.append(pd.to_numeric(j.text.replace(',', '')))
+                        except:
+                            row.append(j.text)
+                        
+                        # grab team id from the one td that has it
+
+
+                    tid = tid[0].split('/')[3]
+                    row.append(tid)
+                    data[s].append(row)
+
+            except:
+                # since 3 tables are being merged into 1, fail if one of the scrapes does not work
+                # easier to redo as a whole than piece together on a second run
+                url_errors.append([season_type])
+                break
+
+        # scrapped the 3 url tables into dfs, time to combine
+        df = pd.DataFrame(data['traditional'], columns = cols['traditional'])
+        for i in stats:
+            if i == 'traditional':
+                pass
+            else:
+                temp = pd.DataFrame(data[i], columns = cols[i])
+                temp = temp.drop(['idx', 'team', 'gp', 'w', 'l', 'min'], axis = 1)
+                df = df.merge(temp, on='tid', how='left')
+        
+        df['date'] = endDate_url
+
+                #save data
+        #dfZoneShooting.to_csv('../data/' + today + '_teamShotZones.csv', index=False)
+        if self.database_export:
+            self.export_database(df, database_table, self.pymysql_conn_str)
+
+        # add to main class object holding all data
+        if self.store_locally:
+            self.data_all[database_table] = df
+
+        # save all urls that failed
+        if len(url_errors) > 0:
+            self.scrape_error_flag = True
+            self.scrape_errors[database_table]['url'] = url_errors
+
+        print('nba team general scraped...')
+        return
+
     def get_nba_player_playtype_data(            
             self,
             base_url = 'https://www.nba.com/stats/players/{playtype}?TypeGrouping={sideofball}&SeasonType={type}', 
@@ -961,7 +1077,7 @@ class scraper():
 
     #TODO: scrape
     #playerDefRatingUrl = 'https://www.nba.com/stats/players/advanced?CF=MIN*GE*15&SeasonType=Regular%20Season&dir=-1&sort=DEF_RATING'
-    #teamDefRatingUrl = 'https://www.nba.com/stats/teams/advanced?LastNGames=10&dir=A&sort=DEF_RATING'
+
 
     ################
     # basketball reference scrapes
@@ -1152,7 +1268,14 @@ if __name__ == '__main__':
         lastNgames = lastNgames,
         database_table = 'statsteamshotzones'
     )
-
+    scraper.get_nba_team_stats(
+            base_url = 'https://www.nba.com/stats/teams/{stats}?SeasonType={seasonType}',
+            stats = ['traditional', 'advanced', 'opponent'],
+            season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
+            lastNgames = 0,
+            database_table = 'statsteam',
+            endDate = None
+    )
     scraper.get_nba_player_playtype_data(
         base_url = 'https://www.nba.com/stats/players/{playtype}?TypeGrouping={sideofball}&SeasonType={type}', 
         play_types = [
