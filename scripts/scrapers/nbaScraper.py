@@ -18,6 +18,7 @@ warnings.filterwarnings('ignore')
 class scraper():
     """
     facilitates scraping various stat tables from multiple websites
+    nba.com, basketball-reference.com
     """
 
     def __init__(self, browser_path, database_export = False, store_locally=True, pymysql_conn_str = None):
@@ -443,6 +444,8 @@ class scraper():
                 url_errors.append([season_type])
                 break
 
+        
+        driver.close()
         # scrapped the 3 url tables into dfs, time to combine
         df = pd.DataFrame(data['traditional'], columns = cols['traditional'])
         for i in stats:
@@ -469,7 +472,7 @@ class scraper():
             self.scrape_error_flag = True
             self.scrape_errors[database_table]['url'] = url_errors
 
-        print('nba team general scraped...')
+        print('nba team stats scraped...')
         return
 
     def get_nba_player_playtype_data(            
