@@ -5,12 +5,12 @@ from datetime import datetime
 
 ### # nba_api is not friendly, changed it direct url hit ###
 #from nba_api.stats.endpoints import LeagueDashPlayerStats
-#from nba_api.stats.endpoints import ScoreboardV2
+from nba_api.stats.endpoints import ScoreboardV2
 from nba_api.stats.endpoints import PlayerDashboardByGeneralSplits
 
 #TODO:
 ###### immediate
-### CHeck stat level home/away aggregation and merg
+### remove players from df_players before grabbing split data if no props were retrieved for them? 
 
 ####### longer term
 ### add minutes adjustment ( fade expected minutes if injured or increase if increasing role)
@@ -43,7 +43,8 @@ class playerStatModel():
 
 
     def get_teams_playing(self,
-        url = 'https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json'      
+        url = 'https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json',
+        use_api = True    
     ):
         """
         get the teams playing on the date; date = today +/- day_offset
@@ -51,55 +52,54 @@ class playerStatModel():
         assigns list of team ids and dataframe with minimal game detail to class object
         return nothing
         """
+        if use_api:
+            time.sleep(2)
+            try:
+                # Fetch scoreboard data
+                scoreboard = ScoreboardV2(
+                    game_date = self.game_search_date, 
+                    day_offset = self.day_offset
+                )
 
+            except Exception as e:
+                print('Error fetching data:', e)
+                return
+
+            # convert data
+            raw_data = scoreboard.get_json()
+            data = json.loads(raw_data)
+
+            # get headers and filter to ones of interest
+            headers_scoreboard = data['resultSets'][0]['headers']
+            filtered_headers = [headers_scoreboard[i] for i in [0,2,4,6,7]]
+
+            # get data of interest and extract necessary info
+            games = data['resultSets'][0]['rowSet']
+            filtered_games = [[game[0], game[2], game[4], game[6], game[7]] for game in games]
+            df_games =  pd.DataFrame(filtered_games, columns=filtered_headers)
+            del games, headers_scoreboard, raw_data, filtered_games
         
-        '''
-        time.sleep(2)
-        try:
-            # Fetch scoreboard data
-            scoreboard = ScoreboardV2(
-                game_date = self.game_search_date, 
-                day_offset = self.day_offset
-            )
+        else:
 
-        except Exception as e:
-            print('Error fetching data:', e)
-            return
+            response = requests.get(url)
+            data = json.loads(response.text)
 
-        # convert data
-        raw_data = scoreboard.get_json()
-        data = json.loads(raw_data)
+            games_data = []
+            for i in data['scoreboard']['games']:
+                game_data = [
+                    i['gameEt'],
+                    i['gameId'],
+                    i['gameEt'],
+                    i['homeTeam']['teamId'],
+                    i['awayTeam']['teamId']
+                ]
 
-        # get headers and filter to ones of interest
-        headers_scoreboard = data['resultSets'][0]['headers']
-        filtered_headers = [headers_scoreboard[i] for i in [0,2,4,6,7,8]]
+                games_data.append(game_data)
 
-        # get data of interest and extract necessary info
-        games = data['resultSets'][0]['rowSet']
-        filtered_games = [[game[0], game[2], game[4], game[6], game[7], game[8]] for game in games]
-        df_games =  pd.DataFrame(filtered_games, columns=filtered_headers)
-        del games, headers_scoreboard, raw_data, filtered_games
-        '''
-
-        response = requests.get(url)
-        data = json.loads(response.text)
-
-        games_data = []
-        for i in data['scoreboard']['games']:
-            game_data = [
-                i['gameEt'],
-                i['gameId'],
-                i['gameEt'],
-                i['homeTeam']['teamId'],
-                i['awayTeam']['teamId']
+            columns_games = [
+                'GAME_DATE_EST','GAME_ID','GAME_STATUS_TEXT','HOME_TEAM_ID','VISITOR_TEAM_ID'
             ]
-
-            games_data.append(game_data)
-
-        columns_games = [
-            'GAME_DATE_EST','GAME_ID','GAME_STATUS_TEXT','HOME_TEAM_ID','VISITOR_TEAM_ID'
-        ]
-        df_games = pd.DataFrame(games_data, columns = columns_games)
+            df_games = pd.DataFrame(games_data, columns = columns_games)
 
         # data processing
         #df_games.loc[:,'GAME_DATE_EST'] = pd.to_datetime(df_games.loc[:,'GAME_DATE_EST']).dt.date
@@ -165,7 +165,7 @@ class playerStatModel():
     def get_players_playing(self,
         # use format to input perMode (per), season id (sid), and team id (tid)
         url_base_nba_player_stat = 'https://stats.nba.com/stats/leaguedashplayerstats?College=&Conference=&Country=&DateFrom=&DateTo=&Division=&DraftPick=&DraftYear=&GameScope=&GameSegment=&Height=&LastNGames=0&LeagueID=00&Location=&MeasureType=Base&Month=0&OpponentTeamID=0&Outcome=&PORound=0&PaceAdjust=N&PerMode={per}&Period=0&PlayerExperience=&PlayerPosition=&PlusMinus=N&Rank=N&Season={sid}&SeasonSegment=&SeasonType=Regular+Season&ShotClockRange=&StarterBench=&TeamID={tid}&TwoWay=0&VsConference=&VsDivision=&Weight=',
-        use_default_home_adj = True
+        minute_cutoff = 15.0
     ):
         """
         using the team ids from get_teams_playing(), aggregate player data stats of interest
@@ -206,6 +206,7 @@ class playerStatModel():
         ]
         df_players = pd.DataFrame(player_stats_list, columns = columns_player_stats)
         df_players = df_players[df_players['TEAM_ID'].isin(teams)][columns_players_keep]
+        df_players = df_players[df_players['MIN'] >= minute_cutoff]
         self.list_players = list(df_players['PLAYER_ID'].unique())
 
         ### processing
@@ -247,8 +248,6 @@ class playerStatModel():
             df_players['TEAM_ID'].nunique(), 'teams, out of a total', len(teams)
         )
          
-
-        self.get_player_home_adv(use_default = use_default_home_adj)
         return
     
     # 
@@ -275,16 +274,22 @@ class playerStatModel():
         else:
             # gather required data to calculate home advantage
             all_splits = []
-
+            count = 1
+            total = len(self.list_players)
             for pid in self.list_players:
                 splits = PlayerDashboardByGeneralSplits(
                     player_id = pid, 
-                    season = self.season
+                    season = self.season,
+                    headers = self.HEADERS,
+                    timeout = 5
                 )
                 
                 df_splits = splits.get_data_frames()[1]  # 1 = Home/Away splits
                 df_splits['PLAYER_ID'] = pid  # Add player ID for tracking
                 all_splits.append(df_splits)
+                print(count, '/', total, 'player splits..')
+                count += 1
+                time.sleep(1.5)
 
             # Combine all players into a single DataFrame
             df_location_splits = pd.concat(all_splits, ignore_index=True)
@@ -295,6 +300,7 @@ class playerStatModel():
             ]
 
             df_location_splits = df_location_splits[columns_splits]
+            df_location_splits = df_location_splits[df_location_splits['GROUP_VALUE'] != 'Neutral']
 
             # Pivot to separate Home & Road stats
             df_pivot = df_location_splits.pivot(index='PLAYER_ID', columns='GROUP_VALUE')
@@ -321,7 +327,7 @@ class playerStatModel():
             cols_to_display.append('PLAYER_ID')
 
             # create df to join to players
-            df_pivot = df_pivot[cols_to_display]
+            df_pivot = df_pivot.reset_index(drop=False)[cols_to_display]
 
             # merge data
             self.df_players = pd.merge(self.df_players, df_pivot, how='left', on='PLAYER_ID')
@@ -335,13 +341,20 @@ if __name__ == '__main__':
         season = '2024-25', 
         perMode = 'PerGame'
     )
+    # gathers game data for today +/- day_offset
     model.get_teams_playing()
+
+    # add team pace data to game dataframe
     model.get_teams_pace(
         base_url = 'https://stats.nba.com/stats/leaguedashteamstats?Conference=&DateFrom=&DateTo=&Division=&GameScope=&GameSegment=&Height=&ISTRound=&LastNGames=0&LeagueID=00&Location=&MeasureType=Advanced&Month=0&OpponentTeamID=0&Outcome=&PORound=0&PaceAdjust=N&PerMode=PerGame&Period=0&PlayerExperience=&PlayerPosition=&PlusMinus=N&Rank=N&Season={sid}&SeasonSegment=&SeasonType=Regular%20Season&ShotClockRange=&StarterBench=&TeamID=0&TwoWay=0&VsConference=&VsDivision='
     )
+
+    # gather base player stats into dataframe
     model.get_players_playing(
         url_base_nba_player_stat = 'https://stats.nba.com/stats/leaguedashplayerstats?College=&Conference=&Country=&DateFrom=&DateTo=&Division=&DraftPick=&DraftYear=&GameScope=&GameSegment=&Height=&LastNGames=0&LeagueID=00&Location=&MeasureType=Base&Month=0&OpponentTeamID=0&Outcome=&PORound=0&PaceAdjust=N&PerMode={per}&Period=0&PlayerExperience=&PlayerPosition=&PlusMinus=N&Rank=N&Season={sid}&SeasonSegment=&SeasonType=Regular+Season&ShotClockRange=&StarterBench=&TeamID={tid}&TwoWay=0&VsConference=&VsDivision=&Weight=',
-        use_default_home_adj = True
+        minute_cutoff = 15.0
     )
+    # add home game % change in stats for prop categories
     model.get_player_home_adv(use_default=True)
+    
 
