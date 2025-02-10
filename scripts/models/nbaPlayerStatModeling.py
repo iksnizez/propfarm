@@ -9,6 +9,9 @@ from sqlalchemy import create_engine
 from nba_api.stats.endpoints import ScoreboardV2
 from nba_api.stats.endpoints import PlayerDashboardByGeneralSplits
 
+# models
+from scipy.stats import poisson
+
 #TODO:
 ###### immediate
 ### remove players from df_players before grabbing split data if no props were retrieved for them? 
@@ -45,6 +48,13 @@ def calculate_reb_adjustment(opp_reb_pct, league_avg_reb_pct):
 def calculate_opp_adjustment(opp_stat_conceded, league_avg_opp_stat_conceded):
     stats_adj = opp_stat_conceded / league_avg_opp_stat_conceded
     return stats_adj
+
+def convert_deci_to_ameri_odds(prob):
+    if prob == 0: return None  # Avoid division by zero
+    if prob >= 0.5:
+        return -100 * (prob / (1 - prob))  # Favorite
+    else:
+        return 100 * ((1 - prob) / prob)  # Underdog
 
 class playerStatModel():
     
@@ -362,14 +372,13 @@ class playerStatModel():
         df_props_pivot.columns = [f'{prop}_{stat}' for prop, stat in df_props_pivot.columns]
         df_props_pivot = df_props_pivot.reset_index()
 
-
-
         # join props to df_players
         self.df_players = self.df_players.merge(
             df_props_pivot, 
             on = 'PLAYER_ID', 
             how = 'inner'
         )
+        self.df_players = self.df_players.fillna(0)
         print(props.shape[0], 'prop bets for', props['PLAYER_ID'].nunique(), 'players...')
         return
 
@@ -443,10 +452,13 @@ class playerStatModel():
 
             # Compute Home - Road % delta in per-game stats
             for col in cols_to_avg:
-                df_pivot[f'{col}_DIFF'] = (df_pivot[f'{col}_Home_per_G'] - df_pivot[f'{col}_Road_per_G']) / df_pivot[f'{col}_Home_per_G']
-
+                df_pivot[f'{col}_ROADadj'] = 1 + ((df_pivot[f'{col}_Home_per_G'] - df_pivot[f'{col}_Road_per_G']) / df_pivot[f'{col}_Home_per_G'])
+                df_pivot[f'{col}_HOMEadj'] = 1 + ((df_pivot[f'{col}_Home_per_G'] - df_pivot[f'{col}_Road_per_G']) / df_pivot[f'{col}_Road_per_G'])
+            
             # columns to keep then join to df_players
-            cols_to_display = [f'{col}_DIFF' for col in cols_to_avg]
+            cols_to_display = [f'{col}_HOMEadj' for col in cols_to_avg]
+            for col in cols_to_avg:
+                cols_to_display.append(f'{col}_ROADadj')
             cols_to_display.append('PLAYER_ID')
 
             # create df to join to players
@@ -455,21 +467,81 @@ class playerStatModel():
             # merge data
             self.df_players = pd.merge(self.df_players, df_pivot, how='left', on='PLAYER_ID')
             return
-
+    
+    # TODO model minutes, right now just using season avg as expected
+    def model_expected_minutes(self):
+        # needs to be a percent
+        self.df_players.loc[:,'MINadj'] = 1
+        return
+    
     def calculate_model_inputs(self):
         df = self.df_players.copy()
         df.loc[:,'FG2M'] = df['FGM'] - df['FG3M']
         df.loc[:,'FG2A'] = df['FGA'] - df['FG3A']
-        df.loc[:,'FG2A_PCT'] = df['FG2M'] / df['FG2A']
+        df.loc[:,'FG2_PCT'] = df['FG2M'] / df['FG2A']
         df.loc[:,'FGA_FTA'] = df['FGA'] + df['FTA']
         df.loc[:,'shotshareFG2A'] = df['FG2A'] / df['FGA_FTA']
         df.loc[:,'shotshareFG3A'] = df['FG3A'] / df['FGA_FTA']
         df.loc[:,'shotshareFTA'] = df['FTA'] / df['FGA_FTA']
 
+        # expected stats
+        df.loc[:,'expReb'] = np.where(df['homeTeam'] == 1,
+            ((df['MINadj'] * df['PACEadj'] * df['OREB_HOMEadj'] * df['OREB'] * df['OREBadj']) + 
+             (df['MINadj'] * df['PACEadj'] * df['DREB_HOMEadj'] * df['DREB'] * df['DREBadj'])
+            ),
+            ((df['MINadj'] * df['PACEadj'] * df['OREB_ROADadj'] * df['OREB'] * df['OREBadj']) + 
+             (df['MINadj'] * df['PACEadj'] * df['DREB_ROADadj'] * df['DREB'] * df['DREBadj'])
+            )
+        ) 
+        df.loc[:,'expAst'] = np.where(df['homeTeam'] == 1,
+            (df['MINadj'] * df['PACEadj'] * df['AST_HOMEadj'] * df['AST'] * df['ASTadj']),
+            (df['MINadj'] * df['PACEadj'] * df['AST_ROADadj'] * df['AST'] * df['ASTadj']) 
+        )
+        df.loc[:,'expPts'] = np.where(df['homeTeam'] == 1,
+            df['MINadj'] * df['PACEadj'] * df['PTS_HOMEadj'] * df['FGA_FTA'] * df['PTSadj'] * (
+                (df['shotshareFG2A'] * df['FG2_PCT'] * 2) + 
+                (df['shotshareFG3A'] * df['FG3_PCT'] * 3) + 
+                (df['shotshareFTA'] * df['FT_PCT'])
+            ),
+            df['MINadj'] * df['PACEadj'] * df['PTS_ROADadj'] * df['FGA_FTA'] * df['PTSadj'] * (
+                (df['shotshareFG2A'] * df['FG2_PCT'] * 2) + 
+                (df['shotshareFG3A'] * df['FG3_PCT'] * 3) + 
+                (df['shotshareFTA'] * df['FT_PCT'])
+            )                            
+        )
 
         self.df_players = df.copy()
         return
-        
+    
+
+    def model_expected_stats_poisson(self):
+        #lamda = 5  # Expected number of occurrences (λ)
+        #samples = np.random.poisson(lamda, size=10)  # Generate 10 samples
+        df = self.df_players.copy()
+        df.loc[:,'REBoProb'] = df.apply(
+            lambda x: 1 - (poisson.cdf(int(x['reb_line']), x['expReb'])),
+            axis = 1
+        )
+        df.loc[:,'REBoOdds'] = df.apply(
+            lambda x: int(convert_deci_to_ameri_odds(1 - (poisson.cdf(int(x['reb_line']), x['expReb'])))),
+            axis = 1
+        )
+        df.loc[:,'ASToProb'] = df.apply(
+            lambda x: 1 - (poisson.cdf(int(x['ast_line']), x['expAst'])),
+            axis = 1
+        ) 
+        df.loc[:,'ASToOdds'] = df.apply(
+            lambda x: int(convert_deci_to_ameri_odds(1 - (poisson.cdf(int(x['ast_line']), x['expAst'])))),
+            axis = 1
+        )        
+        self.df_players = df.copy()
+        return
+
+    def model_expected_stats_negbinom(self):
+        #r = 10   # Number of successes
+        #p = 0.5  # Probability of success
+        #samples = np.random.negative_binomial(r, p, size=10)  # Generate 10 samples
+        return
 
 
 if __name__ == '__main__':
@@ -500,7 +572,12 @@ if __name__ == '__main__':
     # add home game % change in stats for prop categories
     model.get_player_home_adv(use_default=True)
 
+    # model expected minutes
+    model.model_expected_minutes()
+
     # add final model inputs 
     model.calculate_model_inputs()
-    
+
+    # model stats
+
 
