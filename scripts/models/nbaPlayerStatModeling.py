@@ -1,7 +1,8 @@
 import time, json, requests
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
+from sqlalchemy import create_engine
 
 ### # nba_api is not friendly, changed it direct url hit ###
 #from nba_api.stats.endpoints import LeagueDashPlayerStats
@@ -20,6 +21,31 @@ def calculate_pace_adjustment(team_pace, opp_pace):
     # uses geometric mean to calulate pace adjuster
     return np.sqrt(team_pace * opp_pace) / opp_pace
 
+def connect_to_database(database_creds = '../../../../Notes-General/config.txt'):
+    database_creds = database_creds
+    #importing credentials from txt file
+    with open(database_creds, 'r') as f:
+        creds = f.read()
+    creds = json.loads(creds)
+
+    league = "nba"
+    pymysql_conn_str = creds['pymysql'][league]
+
+    conn = create_engine(pymysql_conn_str)
+    return conn
+
+def calculate_reb_adjustment(opp_reb_pct, league_avg_reb_pct):
+    
+    # offensive reb adj = (1 - opp def. reb %) / (league avg offensive reb%)
+    # defensive reb adj = (1 - opp off. reb %) / (league avg defensive reb%)
+    reb_adj = (1 - opp_reb_pct) /   league_avg_reb_pct
+
+    return reb_adj
+
+def calculate_opp_adjustment(opp_stat_conceded, league_avg_opp_stat_conceded):
+    stats_adj = opp_stat_conceded / league_avg_opp_stat_conceded
+    return stats_adj
+
 class playerStatModel():
     
     def __init__(self, day_offset = 0, season = '2024-25', perMode = 'PerGame'):
@@ -29,7 +55,8 @@ class playerStatModel():
         self.season = season
         self.perMode = perMode ##['Per100Possessions', 'Totals', 'Per36', 'PerGame']
         self.game_search_date = datetime.today().strftime('%m/%d/%Y')
-
+        self.game_search_dt = datetime.today() + timedelta(days=day_offset)
+        
         # NBA API Headers to prevent blocking
         self.HEADERS = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
@@ -40,7 +67,6 @@ class playerStatModel():
         }
 
         self.pace_gathered = False
-
 
     def get_teams_playing(self,
         url = 'https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json',
@@ -143,22 +169,40 @@ class playerStatModel():
         return
     
     # TODO: pull from local db instead of hitting this url
-    def get_teams_pace(self,
-        base_url = 'https://stats.nba.com/stats/leaguedashteamstats?Conference=&DateFrom=&DateTo=&Division=&GameScope=&GameSegment=&Height=&ISTRound=&LastNGames=0&LeagueID=00&Location=&MeasureType=Advanced&Month=0&OpponentTeamID=0&Outcome=&PORound=0&PaceAdjust=N&PerMode=PerGame&Period=0&PlayerExperience=&PlayerPosition=&PlusMinus=N&Rank=N&Season={sid}&SeasonSegment=&SeasonType=Regular%20Season&ShotClockRange=&StarterBench=&TeamID=0&TwoWay=0&VsConference=&VsDivision='
+    def get_teams_data(self,
+        base_url = 'https://stats.nba.com/stats/leaguedashteamstats?Conference=&DateFrom=&DateTo=&Division=&GameScope=&GameSegment=&Height=&ISTRound=&LastNGames=0&LeagueID=00&Location=&MeasureType={stattype}&Month=0&OpponentTeamID=0&Outcome=&PORound=0&PaceAdjust=N&PerMode=PerGame&Period=0&PlayerExperience=&PlayerPosition=&PlusMinus=N&Rank=N&Season={sid}&SeasonSegment=&SeasonType=Regular%20Season&ShotClockRange=&StarterBench=&TeamID=0&TwoWay=0&VsConference=&VsDivision='
     ):
-        url_team_pace = base_url.format(sid=self.season)
+        base_url_opp = base_url
+        url_team_pace = base_url.format(sid=self.season, stattype='Advanced')
         response = requests.get(url=url_team_pace, headers=self.HEADERS).json()
 
-        # generate data frame
+        # generate data frame and collect advanced stats
         teams_pace = []
         for i in response['resultSets'][0]['rowSet']:
-            team_pace = [i[0], i[23]]
+            team_pace = [i[0],i[16],i[17], i[23]]
             teams_pace.append(team_pace)
 
-        df_pace = pd.DataFrame(teams_pace, columns=['TEAM_ID', 'PACE'])
+        df_pace = pd.DataFrame(teams_pace, columns=['TEAM_ID', 'OREB_PCT', 'DREB_PCT','PACE'])
+        self.league_avg_pace = df_pace['PACE'].mean()
+        self.league_avg_oreb_pct = df_pace['OREB_PCT'].mean()
+        self.league_avg_dreb_pct = df_pace['DREB_PCT'].mean()
 
-        # join pace data back to class team dataframe
-        self.df_games_long = pd.merge(self.df_games_long, df_pace, how='left', on='TEAM_ID')
+        # generate data frame and collect advanced stats
+        url_team_opp_trad = base_url_opp.format(sid=self.season, stattype='Opponent')
+        response = requests.get(url=url_team_opp_trad, headers=self.HEADERS).json()
+        
+        teams_opp_stats = []
+        for i in response['resultSets'][0]['rowSet']:
+            teams_opp_stat = [i[0], i[19], i[26]]
+            teams_opp_stats.append(teams_opp_stat)
+        
+        df_opp_pts = pd.DataFrame(teams_opp_stats, columns=['TEAM_ID', 'oppAst', 'oppPts'])
+        self.league_avg_oppPts = df_opp_pts['oppPts'].mean()
+        self.league_avg_oppAst = df_opp_pts['oppAst'].mean()
+
+        # join advanced and opponent data back to class team dataframe
+        self.df_games_long = self.df_games_long.merge(df_pace, how='left', on='TEAM_ID')
+        self.df_games_long = self.df_games_long.merge(df_opp_pts, how='left', on='TEAM_ID')
         self.pace_gathered = True
         return
 
@@ -207,7 +251,6 @@ class playerStatModel():
         df_players = pd.DataFrame(player_stats_list, columns = columns_player_stats)
         df_players = df_players[df_players['TEAM_ID'].isin(teams)][columns_players_keep]
         df_players = df_players[df_players['MIN'] >= minute_cutoff]
-        self.list_players = list(df_players['PLAYER_ID'].unique())
 
         ### processing
         # add home flag
@@ -225,7 +268,7 @@ class playerStatModel():
             how = 'left'
         )
         if self.pace_gathered:
-            cols = ['TEAM_ID', 'PACE']
+            cols = ['TEAM_ID', 'OREB_PCT', 'DREB_PCT', 'PACE', 'oppPts', 'oppAst']
             df_players = df_players.merge(
                 self.df_games_long[cols],
                 left_on = 'oppTeamId',
@@ -233,14 +276,43 @@ class playerStatModel():
                 how = 'left'
             )
 
-        df_players = df_players.drop(['TEAM_ID_y'], axis = 1)
-        df_players = df_players.rename(columns={
-            'TEAM_ID_x':'TEAM_ID',
-            'PACE_x':'PACE',
-            'PACE_y':'oppPACE'
-        })
+            df_players = df_players.drop(['TEAM_ID_y'], axis = 1)
+            df_players = df_players.rename(columns={
+                'TEAM_ID_x':'TEAM_ID',
+                'PACE_x':'PACE',
+                'PACE_y':'oppPACE'
+            })
 
-        df_players.loc[:, 'PACEadj'] = df_players.apply(lambda x: calculate_pace_adjustment(x['PACE'], x['oppPACE']), axis = 1)
+            df_players.loc[:, 'PACEadj'] = df_players.apply(lambda x: calculate_pace_adjustment(
+                                                                            x['PACE'], 
+                                                                            x['oppPACE']
+                                                                    ), 
+                                                            axis = 1
+            )
+            df_players.loc[:, 'OREBadj'] = df_players.apply(lambda x: calculate_reb_adjustment(
+                                                                            opp_reb_pct = x['DREB_PCT'], 
+                                                                            league_avg_reb_pct = self.league_avg_oreb_pct
+                                                                    ), 
+                                                            axis = 1
+            )
+            df_players.loc[:, 'DREBadj'] = df_players.apply(lambda x: calculate_reb_adjustment(
+                                                                            opp_reb_pct = x['OREB_PCT'], 
+                                                                            league_avg_reb_pct = self.league_avg_dreb_pct
+                                                                    ), 
+                                                            axis = 1
+            ) 
+            df_players.loc[:, 'PTSadj'] = df_players.apply(lambda x: calculate_opp_adjustment(
+                                                opp_stat_conceded = x['oppPts'],
+                                                league_avg_opp_stat_conceded = self.league_avg_oppPts
+                                        ), 
+                                axis = 1
+            )
+            df_players.loc[:, 'ASTadj'] = df_players.apply(lambda x: calculate_opp_adjustment(
+                                                opp_stat_conceded = x['oppAst'],
+                                                league_avg_opp_stat_conceded = self.league_avg_oppAst
+                                        ), 
+                                axis = 1
+            )        
 
         self.df_players = df_players
         print(
@@ -250,7 +322,57 @@ class playerStatModel():
          
         return
     
-    # 
+    # TODO: add fall back to scrape if no Database present
+    def get_props(self):
+        """
+        **** ONLY FUNCTIONAL ON MY DATABASE ATM *****
+        retrieves the class objects search date props for the day
+        from my database that scrapes from actnet
+        """
+
+
+        query = """
+            SELECT p.nbaId PLAYER_ID, p.player, o.prop, o.line, o.oOdds, o.uOdds  
+            FROM odds o
+            JOIN players p ON o.playerId = p.actnetId
+            WHERE DATE(o.date) = %s;
+        """
+        engine = connect_to_database()
+
+        # query database for props
+        with engine.connect() as connection:
+            props = pd.read_sql(
+                sql=query, 
+                con=connection,  
+                params=(self.game_search_dt.strftime('%Y-%m-%d'),)  
+            )
+
+        # flatten props data
+        df_props_pivot = (
+            props.melt(
+                id_vars=['PLAYER_ID', 'prop'], 
+                value_vars=['line', 'oOdds', 'uOdds']
+            ).pivot(
+                index='PLAYER_ID',
+                columns=['prop', 'variable'],
+                values='value'
+            )
+        )
+
+        df_props_pivot.columns = [f'{prop}_{stat}' for prop, stat in df_props_pivot.columns]
+        df_props_pivot = df_props_pivot.reset_index()
+
+
+
+        # join props to df_players
+        self.df_players = self.df_players.merge(
+            df_props_pivot, 
+            on = 'PLAYER_ID', 
+            how = 'inner'
+        )
+        print(props.shape[0], 'prop bets for', props['PLAYER_ID'].nunique(), 'players...')
+        return
+
     def get_player_home_adv(self, use_default=True):
         """
         use_default = True; will just use a default home court adjuster for all players
@@ -272,11 +394,12 @@ class playerStatModel():
             )
         
         else:
+            list_players = list(self.df_players['PLAYER_ID'].unique())
             # gather required data to calculate home advantage
             all_splits = []
             count = 1
-            total = len(self.list_players)
-            for pid in self.list_players:
+            total = len(list_players)
+            for pid in list_players:
                 splits = PlayerDashboardByGeneralSplits(
                     player_id = pid, 
                     season = self.season,
@@ -289,7 +412,7 @@ class playerStatModel():
                 all_splits.append(df_splits)
                 print(count, '/', total, 'player splits..')
                 count += 1
-                time.sleep(1.5)
+                time.sleep(1.2)
 
             # Combine all players into a single DataFrame
             df_location_splits = pd.concat(all_splits, ignore_index=True)
@@ -333,6 +456,21 @@ class playerStatModel():
             self.df_players = pd.merge(self.df_players, df_pivot, how='left', on='PLAYER_ID')
             return
 
+    def calculate_model_inputs(self):
+        df = self.df_players.copy()
+        df.loc[:,'FG2M'] = df['FGM'] - df['FG3M']
+        df.loc[:,'FG2A'] = df['FGA'] - df['FG3A']
+        df.loc[:,'FG2A_PCT'] = df['FG2M'] / df['FG2A']
+        df.loc[:,'FGA_FTA'] = df['FGA'] + df['FTA']
+        df.loc[:,'shotshareFG2A'] = df['FG2A'] / df['FGA_FTA']
+        df.loc[:,'shotshareFG3A'] = df['FG3A'] / df['FGA_FTA']
+        df.loc[:,'shotshareFTA'] = df['FTA'] / df['FGA_FTA']
+
+
+        self.df_players = df.copy()
+        return
+        
+
 
 if __name__ == '__main__':
 
@@ -345,7 +483,7 @@ if __name__ == '__main__':
     model.get_teams_playing()
 
     # add team pace data to game dataframe
-    model.get_teams_pace(
+    model.get_teams_data(
         base_url = 'https://stats.nba.com/stats/leaguedashteamstats?Conference=&DateFrom=&DateTo=&Division=&GameScope=&GameSegment=&Height=&ISTRound=&LastNGames=0&LeagueID=00&Location=&MeasureType=Advanced&Month=0&OpponentTeamID=0&Outcome=&PORound=0&PaceAdjust=N&PerMode=PerGame&Period=0&PlayerExperience=&PlayerPosition=&PlusMinus=N&Rank=N&Season={sid}&SeasonSegment=&SeasonType=Regular%20Season&ShotClockRange=&StarterBench=&TeamID=0&TwoWay=0&VsConference=&VsDivision='
     )
 
@@ -354,7 +492,15 @@ if __name__ == '__main__':
         url_base_nba_player_stat = 'https://stats.nba.com/stats/leaguedashplayerstats?College=&Conference=&Country=&DateFrom=&DateTo=&Division=&DraftPick=&DraftYear=&GameScope=&GameSegment=&Height=&LastNGames=0&LeagueID=00&Location=&MeasureType=Base&Month=0&OpponentTeamID=0&Outcome=&PORound=0&PaceAdjust=N&PerMode={per}&Period=0&PlayerExperience=&PlayerPosition=&PlusMinus=N&Rank=N&Season={sid}&SeasonSegment=&SeasonType=Regular+Season&ShotClockRange=&StarterBench=&TeamID={tid}&TwoWay=0&VsConference=&VsDivision=&Weight=',
         minute_cutoff = 15.0
     )
+
+    # retrieve props from database
+    ### THIS WONT WORK WITHOUT ACCESS TO MY DATABASE
+    model.get_props()
+    
     # add home game % change in stats for prop categories
     model.get_player_home_adv(use_default=True)
+
+    # add final model inputs 
+    model.calculate_model_inputs()
     
 
