@@ -60,7 +60,7 @@ def convert_probability_to_ameri_odds(prob):
     else:
         american = 100 * ((1 - prob) / prob)  # Underdog
 
-    return american
+    return int(american)
 
 def convert_probability_to_deci_odds(prob):   
     # decimal style
@@ -466,7 +466,7 @@ class playerStatModel():
                 all_splits.append(df_splits)
                 print(count, '/', total, 'player splits..')
                 count += 1
-                time.sleep(1.2)
+                time.sleep(1.5)
 
             # Combine all players into a single DataFrame
             df_location_splits = pd.concat(all_splits, ignore_index=True)
@@ -495,15 +495,21 @@ class playerStatModel():
                 df_pivot[f'{col}_Home_per_G'] = df_pivot[f'{col}_Home'] / df_pivot['GP_Home']
                 df_pivot[f'{col}_Road_per_G'] = df_pivot[f'{col}_Road'] / df_pivot['GP_Road']
 
-            # Compute Home - Road % delta in per-game stats
+            # Compute Home - Road % delta in per-game stats - limiting impact at 20% fade and 20% boost 
+            #TODO: explore different floors for the fade
+            cols_to_display = []
             for col in cols_to_avg:
-                df_pivot[f'{col}_ROADadj'] = 1 + ((df_pivot[f'{col}_Home_per_G'] - df_pivot[f'{col}_Road_per_G']) / df_pivot[f'{col}_Home_per_G'])
-                df_pivot[f'{col}_HOMEadj'] = 1 + ((df_pivot[f'{col}_Home_per_G'] - df_pivot[f'{col}_Road_per_G']) / df_pivot[f'{col}_Road_per_G'])
-            
-            # columns to keep then join to df_players
-            cols_to_display = [f'{col}_HOMEadj' for col in cols_to_avg]
-            for col in cols_to_avg:
+                df_pivot[f'{col}_ROADadj'] = (1 + ((df_pivot[f'{col}_Home_per_G'] - df_pivot[f'{col}_Road_per_G']
+                                                    ) / df_pivot[f'{col}_Home_per_G'])).clip(0.8, 1.2)
+                df_pivot[f'{col}_HOMEadj'] = (1 + ((df_pivot[f'{col}_Home_per_G'] - df_pivot[f'{col}_Road_per_G']
+                                                    ) / df_pivot[f'{col}_Road_per_G'])).clip(0.8, 1.2)
+                cols_to_display.append(f'{col}_HOMEadj')
                 cols_to_display.append(f'{col}_ROADadj')
+
+            # columns to keep then join to df_players
+            #cols_to_display = [f'{col}_HOMEadj' for col in cols_to_avg]
+            #for col in cols_to_avg:
+            #    cols_to_display.append(f'{col}_ROADadj')
             cols_to_display.append('PLAYER_ID')
 
             # create df to join to players
@@ -539,7 +545,8 @@ class playerStatModel():
             ((df['MINadj'] * df['PACEadj'] * df['OREB_ROADadj'] * df['OREB'] * df['OREBadj']) + 
              (df['MINadj'] * df['PACEadj'] * df['DREB_ROADadj'] * df['DREB'] * df['DREBadj'])
             )
-        ) 
+        )
+        
         df.loc[:,'expAst'] = np.where(df['homeTeam'] == 1,
             (df['MINadj'] * df['PACEadj'] * df['AST_HOMEadj'] * df['AST'] * df['ASTadj']),
             (df['MINadj'] * df['PACEadj'] * df['AST_ROADadj'] * df['AST'] * df['ASTadj']) 
@@ -564,19 +571,16 @@ class playerStatModel():
         #lamda = 5  # Expected number of occurrences (λ)
         #samples = np.random.poisson(lamda, size=10)  # Generate 10 samples
         df = self.df_players.copy()
-        df.loc[:,'REBoProb'] = df.apply(
-            #lambda x: 1 - (poisson.cdf(int(x['reb_line']), x['expReb'])),
-            lambda x: (poisson.pmf(int(x['reb_line']), x['expReb'])),
-            axis = 1
-        )
+
+        sim_results = np.random.poisson(df['expReb'].values[:, None], (len(df), self.num_simulations))
+        df['REBoProb'] = (sim_results > df['reb_line'].values[:, None]).sum(axis=1) / self.num_simulations
+
         df.loc[:,'REBoOdds'] =  df['REBoProb'].apply(convert_probability_to_ameri_odds)
         df.loc[:,'REBoOdds_deci'] = df['REBoProb'].apply(convert_probability_to_deci_odds)
 
-        df.loc[:,'ASToProb'] = df.apply(
-            #lambda x: 1 - (poisson.cdf(int(x['ast_line']), x['expAst'])),
-            lambda x: (poisson.pmf(int(x['ast_line']), x['expAst'])),
-            axis = 1
-        ) 
+        sim_results = np.random.poisson(df['expAst'].values[:, None], (len(df), self.num_simulations))
+        df['ASToProb'] = (sim_results > df['ast_line'].values[:, None]).sum(axis=1) / self.num_simulations
+
         df.loc[:,'ASToOdds'] =  df['ASToProb'].apply(convert_probability_to_ameri_odds)
         df.loc[:,'ASToOdds_deci'] = df['ASToProb'].apply(convert_probability_to_deci_odds)
 
@@ -594,10 +598,17 @@ class playerStatModel():
         probabilities = []
         
         for _, row in df.iterrows():
-            simulated_points = simulate_points(self.num_simulations,
-                row['FGA_FTA'] * row['MINadj'] * row['PACEadj']  * row['PTSadj'], #TODO Incorp home/road adj
+            simulated_points = np.where(row['homeTeam'] == 1,
+                simulate_points(self.num_simulations,
+                row['FGA_FTA'] * row['MINadj'] * row['PACEadj']  * row['PTSadj'] * row['PTS_HOMEadj'], #TODO Incorp home/road adj
                 row['shotshareFG2A'], row['shotshareFG3A'], row['shotshareFTA'],
                 row['FG2_PCT'], row['FG3_PCT'], row['FT_PCT']
+                ),
+                simulate_points(self.num_simulations,
+                row['FGA_FTA'] * row['MINadj'] * row['PACEadj']  * row['PTSadj'] * row['PTS_ROADadj'], #TODO Incorp home/road adj
+                row['shotshareFG2A'], row['shotshareFG3A'], row['shotshareFTA'],
+                row['FG2_PCT'], row['FG3_PCT'], row['FT_PCT']
+                )
             )
 
             # Compute probability of scoring at least X points
