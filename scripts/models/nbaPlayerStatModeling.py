@@ -10,7 +10,8 @@ from nba_api.stats.endpoints import ScoreboardV2
 from nba_api.stats.endpoints import PlayerDashboardByGeneralSplits
 
 # models
-from scipy.stats import poisson
+from scipy.stats import poisson, binom, nbinom
+from scipy.signal import convolve
 
 #TODO:
 ###### immediate
@@ -49,16 +50,49 @@ def calculate_opp_adjustment(opp_stat_conceded, league_avg_opp_stat_conceded):
     stats_adj = opp_stat_conceded / league_avg_opp_stat_conceded
     return stats_adj
 
-def convert_deci_to_ameri_odds(prob):
-    if prob == 0: return None  # Avoid division by zero
-    if prob >= 0.5:
-        return -100 * (prob / (1 - prob))  # Favorite
+def convert_probability_to_ameri_odds(prob):
+    if (prob == 0) | (pd.isnull(prob)): 
+        american = np.nan  
+    elif prob == 1: 
+        american =  -100 * (prob / (1 - 0.999999))  # Favorite    
+    elif prob >= 0.5:
+        american =  -100 * (prob / (1 - prob))  # Favorite
     else:
-        return 100 * ((1 - prob) / prob)  # Underdog
+        american = 100 * ((1 - prob) / prob)  # Underdog
+
+    return american
+
+def convert_probability_to_deci_odds(prob):   
+    # decimal style
+    if prob > 0:
+        decimal = round(1 / prob, 3)
+    else:
+        decimal = np.nan
+
+    return decimal
+
+def simulate_points(num_simulations, expected_total_shots, fg2a_share, fg3a_share, fta_share, fg2_pct, fg3_pct, ft_pct):
+        """
+        Simulates a player's total points using a Monte Carlo method.
+
+        Returns:
+            np.array: Simulated points scored in each iteration.
+        """
+        total_shots = np.random.poisson(expected_total_shots, num_simulations)
+        fg2a = np.random.binomial(total_shots, fg2a_share)
+        fg3a = np.random.binomial(total_shots - fg2a, fg3a_share / (fg3a_share + fta_share))  
+        fta = total_shots - fg2a - fg3a  
+
+        fg2m = np.random.binomial(fg2a, fg2_pct)
+        fg3m = np.random.binomial(fg3a, fg3_pct)
+        ftm = np.random.binomial(fta, ft_pct)
+
+        points = (fg2m * 2) + (fg3m * 3) + ftm
+        return points
 
 class playerStatModel():
     
-    def __init__(self, day_offset = 0, season = '2024-25', perMode = 'PerGame'):
+    def __init__(self, day_offset = 0, season = '2024-25', perMode = 'PerGame', num_simulations= 10000):
         
 
         self.day_offset = day_offset
@@ -66,6 +100,7 @@ class playerStatModel():
         self.perMode = perMode ##['Per100Possessions', 'Totals', 'Per36', 'PerGame']
         self.game_search_date = datetime.today().strftime('%m/%d/%Y')
         self.game_search_dt = datetime.today() + timedelta(days=day_offset)
+        self.num_simulations = num_simulations
         
         # NBA API Headers to prevent blocking
         self.HEADERS = {
@@ -235,6 +270,7 @@ class playerStatModel():
 
         for i in range(len(teams)):
             team_id = teams[i]
+            roster = []
             player_info_url = url_base_nba_player_stat.format(
                 per = self.perMode,
                 sid = self.season, 
@@ -249,16 +285,25 @@ class playerStatModel():
                 response = requests.get(url=player_info_url, headers=self.HEADERS).json()
 
             for j in response['resultSets'][0]['rowSet']:
-                player_stats_list.append(j)
+                roster.append(j)
             
-            time.sleep(1)
-
-        columns_players_keep = [
+            columns_players_keep = [
             'PLAYER_ID', 'PLAYER_NAME', 'TEAM_ID', 'TEAM_ABBREVIATION', 'MIN', 'FGM', 'FGA', 
             'FG_PCT', 'FG3M', 'FG3A', 'FG3_PCT', 'FTM', 'FTA', 'FT_PCT', 'OREB', 'DREB', 'REB', 
             'AST','TOV', 'STL', 'BLK', 'BLKA', 'PF', 'PFD', 'PTS', 'PLUS_MINUS'
-        ]
-        df_players = pd.DataFrame(player_stats_list, columns = columns_player_stats)
+            ]
+            temp = pd.DataFrame(roster, columns = columns_player_stats)
+            # players stay in team data even after switching teams but their team_abbreviation changes
+            # gather the most common team abbreviation on the team (it should be the actual team matching the id)
+            correct_team = temp['TEAM_ABBREVIATION'].value_counts()[:1].index.tolist()
+            #filter out the non matching players
+            temp = temp[temp['TEAM_ABBREVIATION'].isin(correct_team)]
+            player_stats_list.append(temp)
+
+            time.sleep(1)
+
+
+        df_players = pd.concat(player_stats_list)
         df_players = df_players[df_players['TEAM_ID'].isin(teams)][columns_players_keep]
         df_players = df_players[df_players['MIN'] >= minute_cutoff]
 
@@ -480,9 +525,11 @@ class playerStatModel():
         df.loc[:,'FG2A'] = df['FGA'] - df['FG3A']
         df.loc[:,'FG2_PCT'] = df['FG2M'] / df['FG2A']
         df.loc[:,'FGA_FTA'] = df['FGA'] + df['FTA']
-        df.loc[:,'shotshareFG2A'] = df['FG2A'] / df['FGA_FTA']
-        df.loc[:,'shotshareFG3A'] = df['FG3A'] / df['FGA_FTA']
-        df.loc[:,'shotshareFTA'] = df['FTA'] / df['FGA_FTA']
+        # account for zero pct shot share by changing a 0 to a miniscule number
+        # TODO better fix for zeros
+        df.loc[:,'shotshareFG2A'] = np.where(df['FG2A'] / df['FGA_FTA'] == 0, .00001, df['FG2A'] / df['FGA_FTA'])
+        df.loc[:,'shotshareFG3A'] = np.where(df['FG3A'] / df['FGA_FTA'] == 0, .00001, df['FG3A'] / df['FGA_FTA'])
+        df.loc[:,'shotshareFTA'] = np.where(df['FTA'] / df['FGA_FTA'] == 0, .00001, df['FTA'] / df['FGA_FTA'])
 
         # expected stats
         df.loc[:,'expReb'] = np.where(df['homeTeam'] == 1,
@@ -513,43 +560,64 @@ class playerStatModel():
         self.df_players = df.copy()
         return
     
-
     def model_expected_stats_poisson(self):
         #lamda = 5  # Expected number of occurrences (λ)
         #samples = np.random.poisson(lamda, size=10)  # Generate 10 samples
         df = self.df_players.copy()
         df.loc[:,'REBoProb'] = df.apply(
-            lambda x: 1 - (poisson.cdf(int(x['reb_line']), x['expReb'])),
+            #lambda x: 1 - (poisson.cdf(int(x['reb_line']), x['expReb'])),
+            lambda x: (poisson.pmf(int(x['reb_line']), x['expReb'])),
             axis = 1
         )
-        df.loc[:,'REBoOdds'] = df.apply(
-            lambda x: int(convert_deci_to_ameri_odds(1 - (poisson.cdf(int(x['reb_line']), x['expReb'])))),
-            axis = 1
-        )
+        df.loc[:,'REBoOdds'] =  df['REBoProb'].apply(convert_probability_to_ameri_odds)
+        df.loc[:,'REBoOdds_deci'] = df['REBoProb'].apply(convert_probability_to_deci_odds)
+
         df.loc[:,'ASToProb'] = df.apply(
-            lambda x: 1 - (poisson.cdf(int(x['ast_line']), x['expAst'])),
+            #lambda x: 1 - (poisson.cdf(int(x['ast_line']), x['expAst'])),
+            lambda x: (poisson.pmf(int(x['ast_line']), x['expAst'])),
             axis = 1
         ) 
-        df.loc[:,'ASToOdds'] = df.apply(
-            lambda x: int(convert_deci_to_ameri_odds(1 - (poisson.cdf(int(x['ast_line']), x['expAst'])))),
-            axis = 1
-        )        
+        df.loc[:,'ASToOdds'] =  df['ASToProb'].apply(convert_probability_to_ameri_odds)
+        df.loc[:,'ASToOdds_deci'] = df['ASToProb'].apply(convert_probability_to_deci_odds)
+
         self.df_players = df.copy()
         return
 
-    def model_expected_stats_negbinom(self):
-        #r = 10   # Number of successes
-        #p = 0.5  # Probability of success
-        #samples = np.random.negative_binomial(r, p, size=10)  # Generate 10 samples
-        return
+    def model_expected_pts(self):
+        """
+        Adds a column to the DataFrame with the probability of scoring at least X points.
 
+        Returns:
+            pd.DataFrame: Updated DataFrame with probability column.
+        """
+        df = self.df_players.copy()
+        probabilities = []
+        
+        for _, row in df.iterrows():
+            simulated_points = simulate_points(self.num_simulations,
+                row['FGA_FTA'] * row['MINadj'] * row['PACEadj']  * row['PTSadj'], #TODO Incorp home/road adj
+                row['shotshareFG2A'], row['shotshareFG3A'], row['shotshareFTA'],
+                row['FG2_PCT'], row['FG3_PCT'], row['FT_PCT']
+            )
+
+            # Compute probability of scoring at least X points
+            prob = np.mean(simulated_points >= row['pts_line'])
+            probabilities.append(prob)
+
+        df.loc[:,'PTSoProb'] = probabilities
+        df.loc[:,'PTSoOdds'] =  df['PTSoProb'].apply(convert_probability_to_ameri_odds)
+        df.loc[:,'PTSoOdds_deci'] = df['PTSoProb'].apply(convert_probability_to_deci_odds)
+        
+        self.df_players = df.copy()
+        return 
 
 if __name__ == '__main__':
 
     model = playerStatModel(
         day_offset = 0, 
         season = '2024-25', 
-        perMode = 'PerGame'
+        perMode = 'PerGame',
+        num_simulations = 10000
     )
     # gathers game data for today +/- day_offset
     model.get_teams_playing()
