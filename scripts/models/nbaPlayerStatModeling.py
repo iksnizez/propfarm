@@ -52,7 +52,7 @@ def calculate_opp_adjustment(opp_stat_conceded, league_avg_opp_stat_conceded):
 
 def convert_probability_to_ameri_odds(prob):
     if (prob == 0) | (pd.isnull(prob)): 
-        american = np.nan  
+        return np.nan
     elif prob == 1: 
         american =  -100 * (prob / (1 - 0.999999))  # Favorite    
     elif prob >= 0.5:
@@ -71,6 +71,7 @@ def convert_probability_to_deci_odds(prob):
 
     return decimal
 
+# TODO: consider incorporating outputing FG3M data from this to save computational resources
 def simulate_points(num_simulations, expected_total_shots, fg2a_share, fg3a_share, fta_share, fg2_pct, fg3_pct, ft_pct):
         """
         Simulates a player's total points using a Monte Carlo method.
@@ -79,13 +80,24 @@ def simulate_points(num_simulations, expected_total_shots, fg2a_share, fg3a_shar
             np.array: Simulated points scored in each iteration.
         """
         total_shots = np.random.poisson(expected_total_shots, num_simulations)
-        fg2a = np.random.binomial(total_shots, fg2a_share)
-        fg3a = np.random.binomial(total_shots - fg2a, fg3a_share / (fg3a_share + fta_share))  
+        if fg2a_share >= fg3a_share:
+            fg2a = np.random.binomial(total_shots, fg2a_share)
+            fg3a = np.random.binomial(total_shots - fg2a, fg3a_share / (fg3a_share + fta_share)) 
+        else:
+            fg3a = np.random.binomial(total_shots, fg3a_share)
+            fg2a = np.random.binomial(total_shots - fg3a, fg2a_share / (fg2a_share + fta_share))
+        
+        # TODO: consider removin FT fomr this modeling and instead of total shots with 2+3+1
+        # make total shots just 2+3. model fta attemps along with shooting fouls drawn
         fta = total_shots - fg2a - fg3a  
 
-        fg2m = np.random.binomial(fg2a, fg2_pct)
-        fg3m = np.random.binomial(fg3a, fg3_pct)
-        ftm = np.random.binomial(fta, ft_pct)
+        # try, except to catch 0 and nans for players without the stats
+        try: fg2m = np.random.binomial(fg2a, fg2_pct)
+        except: fg2m = 0 
+        try: fg3m = np.random.binomial(fg3a, fg3_pct)
+        except: fg3m = 0
+        try: ftm = np.random.binomial(fta, ft_pct)
+        except: ftm = 0
 
         points = (fg2m * 2) + (fg3m * 3) + ftm
         return points
@@ -113,6 +125,9 @@ class playerStatModel():
 
         self.pace_gathered = False
 
+#####################################################
+###### GATHERING DATA
+#####################################################
     def get_teams_playing(self,
         url = 'https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json',
         use_api = True    
@@ -427,6 +442,9 @@ class playerStatModel():
         print(props.shape[0], 'prop bets for', props['PLAYER_ID'].nunique(), 'players...')
         return
 
+#####################################################
+###### CALCULATING FEATURES
+#####################################################
     def get_player_home_adv(self, use_default=True):
         """
         use_default = True; will just use a default home court adjuster for all players
@@ -466,7 +484,11 @@ class playerStatModel():
                 all_splits.append(df_splits)
                 print(count, '/', total, 'player splits..')
                 count += 1
-                time.sleep(1.5)
+                time.sleep(2)
+
+                ### TODO rest splits and adjusters
+                ############### DF IDX 6 is days rest splits
+                #df_days_rest = splits.get_data_frames()[6]
 
             # Combine all players into a single DataFrame
             df_location_splits = pd.concat(all_splits, ignore_index=True)
@@ -491,6 +513,7 @@ class playerStatModel():
                 'DREB', 'REB', 'AST', 'TOV', 'STL', 'BLK', 'BLKA', 'PTS'
             ]
 
+            #the data pulled from PlayerDashboardByGeneralSplits() is coming through as TOTALs, adjust to per game
             for col in cols_to_avg:
                 df_pivot[f'{col}_Home_per_G'] = df_pivot[f'{col}_Home'] / df_pivot['GP_Home']
                 df_pivot[f'{col}_Road_per_G'] = df_pivot[f'{col}_Road'] / df_pivot['GP_Road']
@@ -563,23 +586,30 @@ class playerStatModel():
                 (df['shotshareFTA'] * df['FT_PCT'])
             )                            
         )
+        df.loc[:,'expFG3M'] = np.where(df['homeTeam'] == 1,
+            df['MINadj'] * df['PACEadj'] * df['FG3M_HOMEadj'] * df['PTSadj'] * df['FGA_FTA'] * df['shotshareFG3A'] * df['FG3_PCT'],
+            df['MINadj'] * df['PACEadj'] * df['FG3M_ROADadj'] * df['PTSadj'] * df['FGA_FTA'] * df['shotshareFG3A'] * df['FG3_PCT'] 
+        )
 
         self.df_players = df.copy()
         return
-    
+
+#####################################################
+###### MODELING EXPECTED STATS
+#####################################################   
     def model_expected_stats_poisson(self):
         #lamda = 5  # Expected number of occurrences (λ)
         #samples = np.random.poisson(lamda, size=10)  # Generate 10 samples
         df = self.df_players.copy()
 
         sim_results = np.random.poisson(df['expReb'].values[:, None], (len(df), self.num_simulations))
-        df['REBoProb'] = (sim_results > df['reb_line'].values[:, None]).sum(axis=1) / self.num_simulations
+        df['REBoProb'] = (sim_results >= df['reb_line'].values[:, None]).sum(axis=1) / self.num_simulations
 
         df.loc[:,'REBoOdds'] =  df['REBoProb'].apply(convert_probability_to_ameri_odds)
         df.loc[:,'REBoOdds_deci'] = df['REBoProb'].apply(convert_probability_to_deci_odds)
 
         sim_results = np.random.poisson(df['expAst'].values[:, None], (len(df), self.num_simulations))
-        df['ASToProb'] = (sim_results > df['ast_line'].values[:, None]).sum(axis=1) / self.num_simulations
+        df['ASToProb'] = (sim_results >= df['ast_line'].values[:, None]).sum(axis=1) / self.num_simulations
 
         df.loc[:,'ASToOdds'] =  df['ASToProb'].apply(convert_probability_to_ameri_odds)
         df.loc[:,'ASToOdds_deci'] = df['ASToProb'].apply(convert_probability_to_deci_odds)
@@ -621,6 +651,24 @@ class playerStatModel():
         
         self.df_players = df.copy()
         return 
+
+    def model_expected_fg3m(self):
+        df = self.df_players.copy()
+        # conversions needed to make sure models don't error out on NaNs
+        df['FG3A'] = df['FG3A'].fillna(0).astype(int)  
+        df['FG3_PCT'] = df['FG3_PCT'].fillna(0).astype(float) 
+
+        # Simulate FG3 made
+        sim_results = np.random.binomial(df['FG3A'].values[:, None], df['FG3_PCT'].values[:, None], (len(df), self.num_simulations))
+
+        # Compute probability of exactly x FG3 made
+        df['FG3MoProb'] = (sim_results >= df['threes_line'].values[:, None]).sum(axis=1) / self.num_simulations
+        df['FG3MoProb'] = df['FG3MoProb'].fillna(0).astype(float)
+        df.loc[:,'FG3MoOdds'] =  df['FG3MoProb'].apply(convert_probability_to_ameri_odds)
+        df.loc[:,'FG3MoOdds_deci'] = df['FG3MoProb'].apply(convert_probability_to_deci_odds)
+
+        self.df_players = df.copy()
+        return
 
 if __name__ == '__main__':
 
