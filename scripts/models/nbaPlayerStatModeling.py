@@ -494,10 +494,12 @@ class playerStatModel():
             #TODO: explore different floors for the fade
             cols_to_display = []
             for col in cols_to_avg:
-                df_pivot[f'{col}_ROADadj'] = (1 + ((df_pivot[f'{col}_Home_per_G'] - df_pivot[f'{col}_Road_per_G']
+                df_pivot[f'{col}_ROADadj'] = (1 + ((df_pivot[f'{col}_Road_per_G'] - df_pivot[f'{col}_Home_per_G']
                                                     ) / df_pivot[f'{col}_Home_per_G'])).clip(0.8, 1.2)
+                
                 df_pivot[f'{col}_HOMEadj'] = (1 + ((df_pivot[f'{col}_Home_per_G'] - df_pivot[f'{col}_Road_per_G']
                                                     ) / df_pivot[f'{col}_Road_per_G'])).clip(0.8, 1.2)
+                
                 cols_to_display.append(f'{col}_HOMEadj')
                 cols_to_display.append(f'{col}_ROADadj')
 
