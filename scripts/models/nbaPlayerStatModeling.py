@@ -51,10 +51,8 @@ def calculate_opp_adjustment(opp_stat_conceded, league_avg_opp_stat_conceded):
     return stats_adj
 
 def convert_probability_to_ameri_odds(prob):
-    if (prob == 0) | (pd.isnull(prob)): 
-        return np.nan
-    elif prob == 1: 
-        american =  -100 * (prob / (1 - 0.999999))  # Favorite    
+    if (prob == 0) | (prob == 1) | (pd.isnull(prob)): 
+        return np.nan   
     elif prob >= 0.5:
         american =  -100 * (prob / (1 - prob))  # Favorite
     else:
@@ -63,44 +61,14 @@ def convert_probability_to_ameri_odds(prob):
     return int(american)
 
 def convert_probability_to_deci_odds(prob):   
-    # decimal style
-    if prob > 0:
+    if (prob == 0) | (prob == 1) | (pd.isnull(prob)): 
+        return np.nan
+    elif prob > 0:
         decimal = round(1 / prob, 3)
     else:
         decimal = np.nan
 
     return decimal
-
-# TODO: consider incorporating outputing FG3M data from this to save computational resources
-def simulate_points(num_simulations, expected_total_shots, fg2a_share, fg3a_share, fta_share, fg2_pct, fg3_pct, ft_pct):
-        """
-        Simulates a player's total points using a Monte Carlo method.
-
-        Returns:
-            np.array: Simulated points scored in each iteration.
-        """
-        total_shots = np.random.poisson(expected_total_shots, num_simulations)
-        if fg2a_share >= fg3a_share:
-            fg2a = np.random.binomial(total_shots, fg2a_share)
-            fg3a = np.random.binomial(total_shots - fg2a, fg3a_share / (fg3a_share + fta_share)) 
-        else:
-            fg3a = np.random.binomial(total_shots, fg3a_share)
-            fg2a = np.random.binomial(total_shots - fg3a, fg2a_share / (fg2a_share + fta_share))
-        
-        # TODO: consider removin FT fomr this modeling and instead of total shots with 2+3+1
-        # make total shots just 2+3. model fta attemps along with shooting fouls drawn
-        fta = total_shots - fg2a - fg3a  
-
-        # try, except to catch 0 and nans for players without the stats
-        try: fg2m = np.random.binomial(fg2a, fg2_pct)
-        except: fg2m = 0 
-        try: fg3m = np.random.binomial(fg3a, fg3_pct)
-        except: fg3m = 0
-        try: ftm = np.random.binomial(fta, ft_pct)
-        except: ftm = 0
-
-        points = (fg2m * 2) + (fg3m * 3) + ftm
-        return points
 
 class playerStatModel():
     
@@ -501,6 +469,10 @@ class playerStatModel():
             df_location_splits = df_location_splits[columns_splits]
             df_location_splits = df_location_splits[df_location_splits['GROUP_VALUE'] != 'Neutral']
 
+            #add fg2s
+            df_location_splits.loc[:,'FG2M'] = df_location_splits['FGM'] - df_location_splits['FG3M']
+            df_location_splits.loc[:,'FG2A'] = df_location_splits['FGA'] - df_location_splits['FG3A']
+
             # Pivot to separate Home & Road stats
             df_pivot = df_location_splits.pivot(index='PLAYER_ID', columns='GROUP_VALUE')
 
@@ -509,7 +481,7 @@ class playerStatModel():
 
             # Calculate per-game averages (only for stats that need it)
             cols_to_avg = [
-                'MIN', 'FGM', 'FGA', 'FG3M', 'FG3A', 'FTM', 'FTA', 'OREB', 
+                'MIN', 'FGM', 'FGA', 'FG2M', 'FG2A', 'FG3M', 'FG3A', 'FTM', 'FTA', 'OREB', 
                 'DREB', 'REB', 'AST', 'TOV', 'STL', 'BLK', 'BLKA', 'PTS'
             ]
 
@@ -551,14 +523,15 @@ class playerStatModel():
     def calculate_model_inputs(self):
         df = self.df_players.copy()
         df.loc[:,'FG2M'] = df['FGM'] - df['FG3M']
-        df.loc[:,'FG2A'] = df['FGA'] - df['FG3A']
+        df.loc[:,'FG2A'] = (df['FGA'] - df['FG3A'])#.clip(.1, 100)
+        df.loc[:,'FG3A'] = (df['FG3A'])#.clip(.1, 100)
+        df.loc[:,'FTA'] = (df['FTA'])#.clip(.1, 100)
         df.loc[:,'FG2_PCT'] = df['FG2M'] / df['FG2A']
-        df.loc[:,'FGA_FTA'] = df['FGA'] + df['FTA']
-        # account for zero pct shot share by changing a 0 to a miniscule number
-        # TODO better fix for zeros
-        df.loc[:,'shotshareFG2A'] = np.where(df['FG2A'] / df['FGA_FTA'] == 0, .00001, df['FG2A'] / df['FGA_FTA'])
-        df.loc[:,'shotshareFG3A'] = np.where(df['FG3A'] / df['FGA_FTA'] == 0, .00001, df['FG3A'] / df['FGA_FTA'])
-        df.loc[:,'shotshareFTA'] = np.where(df['FTA'] / df['FGA_FTA'] == 0, .00001, df['FTA'] / df['FGA_FTA'])
+        df.loc[:,'FGA_FTA'] = df['FG2A'] + df['FG3A'] + df['FTA']
+
+        df.loc[:,'shotshareFG2A'] = df['FG2A'] / df['FGA_FTA']
+        df.loc[:,'shotshareFG3A'] = df['FG3A'] / df['FGA_FTA']
+        df.loc[:,'shotshareFTA'] = df['FTA'] / df['FGA_FTA']
 
         # expected stats
         df.loc[:,'expReb'] = np.where(df['homeTeam'] == 1,
@@ -574,101 +547,117 @@ class playerStatModel():
             (df['MINadj'] * df['PACEadj'] * df['AST_HOMEadj'] * df['AST'] * df['ASTadj']),
             (df['MINadj'] * df['PACEadj'] * df['AST_ROADadj'] * df['AST'] * df['ASTadj']) 
         )
-        df.loc[:,'expPts'] = np.where(df['homeTeam'] == 1,
-            df['MINadj'] * df['PACEadj'] * df['PTS_HOMEadj'] * df['FGA_FTA'] * df['PTSadj'] * (
-                (df['shotshareFG2A'] * df['FG2_PCT'] * 2) + 
-                (df['shotshareFG3A'] * df['FG3_PCT'] * 3) + 
-                (df['shotshareFTA'] * df['FT_PCT'])
-            ),
-            df['MINadj'] * df['PACEadj'] * df['PTS_ROADadj'] * df['FGA_FTA'] * df['PTSadj'] * (
-                (df['shotshareFG2A'] * df['FG2_PCT'] * 2) + 
-                (df['shotshareFG3A'] * df['FG3_PCT'] * 3) + 
-                (df['shotshareFTA'] * df['FT_PCT'])
-            )                            
+         
+        df.loc[:,'expFG2A'] = np.where(df['homeTeam'] == 1,
+            df['MINadj'] * df['PACEadj'] * df['FG2M_HOMEadj'] * df['PTSadj'] * df['FGA_FTA'] * df['shotshareFG2A'],
+            df['MINadj'] * df['PACEadj'] * df['FG2M_ROADadj'] * df['PTSadj'] * df['FGA_FTA'] * df['shotshareFG2A']
         )
-        df.loc[:,'expFG3M'] = np.where(df['homeTeam'] == 1,
-            df['MINadj'] * df['PACEadj'] * df['FG3M_HOMEadj'] * df['PTSadj'] * df['FGA_FTA'] * df['shotshareFG3A'] * df['FG3_PCT'],
-            df['MINadj'] * df['PACEadj'] * df['FG3M_ROADadj'] * df['PTSadj'] * df['FGA_FTA'] * df['shotshareFG3A'] * df['FG3_PCT'] 
+        df.loc[:,'expFG2A'] = df['expFG2A'].fillna(0)
+        df.loc[:,'expFG2M'] = df['expFG2A'] * df['FG2_PCT']
+
+        df.loc[:,'expFG3A'] = np.where(df['homeTeam'] == 1,
+            df['MINadj'] * df['PACEadj'] * df['FG3M_HOMEadj'] * df['PTSadj'] * df['FGA_FTA'] * df['shotshareFG3A'],
+            df['MINadj'] * df['PACEadj'] * df['FG3M_ROADadj'] * df['PTSadj'] * df['FGA_FTA'] * df['shotshareFG3A'] 
         )
+        df.loc[:,'expFG3A'] = df['expFG3A'].fillna(0)
+        df.loc[:,'expFG3M'] = df['expFG3A'] * df['FG3_PCT']
+
+        # TODO: consider including other FTA features, fouls, fouls drawn, etc..
+        df.loc[:,'expFTA'] = np.where(df['homeTeam'] == 1,
+            df['MINadj'] * df['PACEadj'] * df['FTM_HOMEadj'] * df['PTSadj'] * df['FGA_FTA'] * df['shotshareFTA'],
+            df['MINadj'] * df['PACEadj'] * df['FTM_ROADadj'] * df['PTSadj'] * df['FGA_FTA'] * df['shotshareFTA'] 
+        )
+        df.loc[:,'expFTA'] = df['expFTA'].fillna(0)        
+        df.loc[:,'expFTM'] = df['expFTA'] * df['FT_PCT'] 
+
+
+        df.loc[:,'expFGM_FTM'] = df['expFG2M'] + df['expFG3M'] + df['expFTM']
+        df.loc[:,'expFGA_FTA'] = df['expFG2A'] + df['expFG3A'] + df['expFTA']
+
+        df.loc[:,'expPts'] = (df['expFG2M'] * 2) + (df['expFG3M'] * 3) + df['expFTM']
 
         self.df_players = df.copy()
         return
 
 #####################################################
 ###### MODELING EXPECTED STATS
-#####################################################   
-    def model_expected_stats_poisson(self):
-        #lamda = 5  # Expected number of occurrences (λ)
-        #samples = np.random.poisson(lamda, size=10)  # Generate 10 samples
+#####################################################
+    def model_stats(self):
         df = self.df_players.copy()
 
-        sim_results = np.random.poisson(df['expReb'].values[:, None], (len(df), self.num_simulations))
-        df['REBoProb'] = (sim_results >= df['reb_line'].values[:, None]).sum(axis=1) / self.num_simulations
+        sim_shots = np.random.poisson(df['expFGA_FTA'].values[:, None], (len(df), self.num_simulations))
+        df['modeledFGA_FTA'] = sim_shots.mean(axis=1).astype(int)
+
+        # Allocate FG2A and FG3A based on condition
+        #TODO consider trying to model the greater of fg3a vs fg2a first . might not matter
+        #fg2a = np.where(df['FG2A'].values[:, None] >= df['FG3A'].values[:, None],
+        #    np.random.binomial(df['modeledFGA_FTA'].values[:, None], df['shotshareFG2A'].values[:, None]),
+        #    np.random.binomial(
+        #        df['modeledFGA_FTA'].values[:, None] - np.random.binomial(df['modeledFGA_FTA'].values[:, None], df['shotshareFG3A'].values[:, None]), 
+        #        df['shotshareFG2A'].values[:, None] / (df['shotshareFG2A'].values[:, None] + df['shotshareFTA'].values[:, None]))
+        #)
+        #fg3a = np.where(df['FG2A'].values[:, None] < df['FG3A'].values[:, None],
+        #    np.random.binomial(df['modeledFGA_FTA'].values[:, None], df['shotshareFG3A'].values[:, None]),
+        #    np.random.binomial(
+        #        df['modeledFGA_FTA'].values[:, None] - np.random.binomial(df['modeledFGA_FTA'].values[:, None], df['shotshareFG2A'].values[:, None]), 
+        #        df['shotshareFG3A'].values[:, None] / (df['shotshareFG3A'].values[:, None] + df['shotshareFTA'].values[:, None]))
+        #)
+        fg2a = np.random.binomial(sim_shots, df['shotshareFG2A'].values[:, None], size=sim_shots.shape)      
+        fg3a = np.random.binomial(sim_shots - fg2a, 
+            df['shotshareFG3A'].values[:, None] / (df['shotshareFG3A'].values[:, None] + df['shotshareFTA'].values[:, None]),
+            size=sim_shots.shape
+        )
+        fta = np.maximum(df['modeledFGA_FTA'].values[:,None] - fg2a - fg3a, 0)
+
+        # Simulate makes using shooting percentages (use np.where to handle zeros safely)
+        fg2m = np.random.binomial(fg2a, df['FG2_PCT'].values[:, None], size=fg2a.shape)
+        fg3m = np.random.binomial(fg3a, df['FG3_PCT'].values[:, None], size=fg3a.shape)
+        ftm = np.random.binomial(fta, df['FT_PCT'].values[:, None], size=fta.shape)
+
+        # Compute total points
+        sim_pts = (fg2m * 2) + (fg3m * 3) + ftm
+
+        df['PTSoProb'] = (sim_pts >= df['pts_line'].values[:, None]).sum(axis=1) / self.num_simulations
+        df.loc[:,'PTSoOdds'] = df['PTSoProb'].apply(convert_probability_to_ameri_odds)
+        df.loc[:,'PTSoOdds_deci'] = df['PTSoProb'].apply(convert_probability_to_deci_odds)
+
+        # ----- FG3M ----
+        # conversions needed to make sure models don't error out on NaNs
+        df['FG3A'] = df['FG3A'].fillna(0).astype(int)  
+        df['FG3_PCT'] = df['FG3_PCT'].fillna(0).astype(float)
+        df['threes_line'] = df['threes_line'].fillna(0).astype(float)
+
+        # Simulate FG3 made
+        sim_fg3m = np.random.binomial(df['FG3A'].values[:, None], df['FG3_PCT'].values[:, None], (len(df), self.num_simulations))
+        self.sim_fg3m = sim_fg3m
+
+        # Compute probability of exactly x FG3 made
+        df['FG3MoProb'] = (sim_fg3m >= df['threes_line'].values[:, None]).sum(axis=1) / self.num_simulations
+        df['FG3MoProb'] = df['FG3MoProb'].fillna(0).astype(float)
+        df.loc[:,'FG3MoOdds'] =  df['FG3MoProb'].apply(convert_probability_to_ameri_odds)
+        df.loc[:,'FG3MoOdds_deci'] = df['FG3MoProb'].apply(convert_probability_to_deci_odds)
+
+        df.loc[:,'FG3MoProb'] = np.where((df['threes_line'] == 0) | (pd.isnull(df['threes_line'])), 0, df['FG3MoProb'])
+        df.loc[:,'FG3MoOdds'] = np.where((df['threes_line'] == 0) | (pd.isnull(df['threes_line'])), 0, df['FG3MoOdds'])
+        df.loc[:,'FG3MoOdds_deci'] = np.where((df['threes_line'] == 0) | (pd.isnull(df['threes_line'])), 0, df['FG3MoOdds_deci'])
+
+        # ----- REB ----- 
+        sim_reb = np.random.poisson(df['expReb'].values[:, None], (len(df), self.num_simulations))
+        df['REBoProb'] = (sim_reb >= df['reb_line'].values[:, None]).sum(axis=1) / self.num_simulations
 
         df.loc[:,'REBoOdds'] =  df['REBoProb'].apply(convert_probability_to_ameri_odds)
         df.loc[:,'REBoOdds_deci'] = df['REBoProb'].apply(convert_probability_to_deci_odds)
 
-        sim_results = np.random.poisson(df['expAst'].values[:, None], (len(df), self.num_simulations))
-        df['ASToProb'] = (sim_results >= df['ast_line'].values[:, None]).sum(axis=1) / self.num_simulations
+        # ----- AST ----- 
+        sim_ast = np.random.poisson(df['expAst'].values[:, None], (len(df), self.num_simulations))
+        df['ASToProb'] = (sim_ast >= df['ast_line'].values[:, None]).sum(axis=1) / self.num_simulations
 
         df.loc[:,'ASToOdds'] =  df['ASToProb'].apply(convert_probability_to_ameri_odds)
         df.loc[:,'ASToOdds_deci'] = df['ASToProb'].apply(convert_probability_to_deci_odds)
 
         self.df_players = df.copy()
-        return
-
-    def model_expected_pts(self):
-        """
-        Adds a column to the DataFrame with the probability of scoring at least X points.
-
-        Returns:
-            pd.DataFrame: Updated DataFrame with probability column.
-        """
-        df = self.df_players.copy()
-        probabilities = []
-        
-        for _, row in df.iterrows():
-            simulated_points = np.where(row['homeTeam'] == 1,
-                simulate_points(self.num_simulations,
-                row['FGA_FTA'] * row['MINadj'] * row['PACEadj']  * row['PTSadj'] * row['PTS_HOMEadj'], #TODO Incorp home/road adj
-                row['shotshareFG2A'], row['shotshareFG3A'], row['shotshareFTA'],
-                row['FG2_PCT'], row['FG3_PCT'], row['FT_PCT']
-                ),
-                simulate_points(self.num_simulations,
-                row['FGA_FTA'] * row['MINadj'] * row['PACEadj']  * row['PTSadj'] * row['PTS_ROADadj'], #TODO Incorp home/road adj
-                row['shotshareFG2A'], row['shotshareFG3A'], row['shotshareFTA'],
-                row['FG2_PCT'], row['FG3_PCT'], row['FT_PCT']
-                )
-            )
-
-            # Compute probability of scoring at least X points
-            prob = np.mean(simulated_points >= row['pts_line'])
-            probabilities.append(prob)
-
-        df.loc[:,'PTSoProb'] = probabilities
-        df.loc[:,'PTSoOdds'] =  df['PTSoProb'].apply(convert_probability_to_ameri_odds)
-        df.loc[:,'PTSoOdds_deci'] = df['PTSoProb'].apply(convert_probability_to_deci_odds)
-        
-        self.df_players = df.copy()
         return 
 
-    def model_expected_fg3m(self):
-        df = self.df_players.copy()
-        # conversions needed to make sure models don't error out on NaNs
-        df['FG3A'] = df['FG3A'].fillna(0).astype(int)  
-        df['FG3_PCT'] = df['FG3_PCT'].fillna(0).astype(float) 
-
-        # Simulate FG3 made
-        sim_results = np.random.binomial(df['FG3A'].values[:, None], df['FG3_PCT'].values[:, None], (len(df), self.num_simulations))
-
-        # Compute probability of exactly x FG3 made
-        df['FG3MoProb'] = (sim_results >= df['threes_line'].values[:, None]).sum(axis=1) / self.num_simulations
-        df['FG3MoProb'] = df['FG3MoProb'].fillna(0).astype(float)
-        df.loc[:,'FG3MoOdds'] =  df['FG3MoProb'].apply(convert_probability_to_ameri_odds)
-        df.loc[:,'FG3MoOdds_deci'] = df['FG3MoProb'].apply(convert_probability_to_deci_odds)
-
-        self.df_players = df.copy()
-        return
 
 if __name__ == '__main__':
 
