@@ -60,77 +60,93 @@ suffix.rep <- c("\\."="", "`"="", "'"="",
 ## FUNCTIONS FOR USE WITH PBP DATA
 ####################
 ###
-tre.ball <- function(x, y, shot) {
-    # ingest the x, y coords of a shot and 
-    # determine if it is a 3-point or 2-point attempt
-    ### any shot in these 2 ranges will always be a 3
-    ### side 3 attempts, the y-coord doesn't matter
-    if((shot == FALSE) | ((x == -214748340) & (y== -214748365))){
-        return(FALSE)
-    }
-    else if((x <= 3) | ( x >= 47)){
-        return(TRUE)
-    } 
-    else {
-        three.arc.center.x <- 25
-        three.arc.center.y <- 0
-        radius <- 23.75
-        # euclid. distance  sqrt((x2-x1)**2 + (y2-y1)**2)
-        ### determining distance of the shot to the hoop
-        ### this ignores side 3pt attempts
-        distance.from.hoop <- sqrt(((three.arc.center.x - x) ** 2) + ((three.arc.center.y - y) ** 2))
-        if((distance.from.hoop > 23.75)){
-            return(TRUE)
-        }
-        
-        return(FALSE)
-    }  
+get.shot.distance <- function(x, y, shot){
+  #ingest shot coordinates and output distance from the center of the hoop
+  arc.center.x <- 25
+  arc.center.y <- 0.25 # the min y value is -5, the center of the hoop is 5.25ft from the base line
+  
+  ifelse(shot == TRUE, 
+         sqrt((arc.center.x - x) ^ 2 + (arc.center.y - y) ^ 2),
+         0
+  )
 }
 
-paint.bucket <- function(x, y, shot){
-    # ingest the x, y coords of a shot and 
-    # determine if it was taken in the paint
-    #### the data has the basket at y = 0 instead of it higher off the out of bounds
-    #### paint height decreased to account for this
-    if((shot == FALSE) | ((x == -214748340) & (y== -214748365))){
-        return(FALSE)
-    }
-    else if(((x >= 17) & (x <= 33)) & (y <= 13.75)){
-        return(TRUE)
-    }
-    else{
-        return(FALSE)
-    }
+fg2a.check <- function(x, y, shot, description) {
+  # ingest the x, y coords of a shot and 
+  # determine if it is a 3-point or 2-point attempt
+  
+  three.arc.center.x <- 25
+  three.arc.center.y <- 0.25 # the min y value is -5, the center of the hoop is 5.25ft from the base line
+  radius <- 23.75 # from the center of the hoop to the 3 line (except for x <=3 and x >= 47 but those are captured in the logic below)
+  
+  ifelse(
+    (shot == FALSE) | ((x == -214748340) & (y == -214748365)) | (grepl("Free Throw", description)), FALSE,
+    ifelse(
+      # any x values that are true here are out side of the arc since there is 3 ft between the oob's and the 3pt line
+      (x <= 3) | (x >= 47), FALSE,
+      # calculates euclid. distance  sqrt((x2-x1)**2 + (y2-y1)**2) to see if it is far enough to qual as  3
+      sqrt((three.arc.center.x - x) ^ 2 + (three.arc.center.y - y) ^ 2) < radius
+    )
+  )
+}
+
+fg3a.check <- function(x, y, shot, description) {
+  # ingest the x, y coords of a shot and 
+  # determine if it is a 3-point or 2-point attempt
+  
+  three.arc.center.x <- 25
+  three.arc.center.y <- 0.25 # the min y value is -5, the center of the hoop is 5.25ft from the base line
+  radius <- 23.75 # from the center of the hoop to the 3 line (except for x <=3 and x >= 47 but those are captured in the logic below)
+  
+  ifelse(
+    (shot == FALSE) | ((x == -214748340) & (y == -214748365)) | (grepl("Free Throw", description)), FALSE,
+    ifelse(
+      # any x values that are true here are out side of the arc since there is 3 ft between the oob's and the 3pt line
+      (x <= 3) | (x >= 47), TRUE,
+      # calculates euclid. distance  sqrt((x2-x1)**2 + (y2-y1)**2) to see if it is far enough to qual as  3
+      sqrt((three.arc.center.x - x) ^ 2 + (three.arc.center.y - y) ^ 2) > radius
+    )
+  )
+}
+
+in.the.paint.check <- function(x, y, shot, description){
+  # ingest the x, y coords of a shot and 
+  # determine if it was taken in the paint
+  #### the data has the basket at y = 0 instead of it higher off the out of bounds
+  #### paint height decreased to account for this
+  ifelse(
+    (shot == FALSE) | ((x == -214748340) & (y == -214748365)) | (grepl("Free Throw", description)), FALSE,
+    ifelse(
+      # court is 50 wide, paint is centered 50 - 16 = 34 / 2 = 17 ft on each side of the paint
+      # coords X reference to 0 so 0-16 outside paint, 17-33 paint, 34 - 50 outside paint
+      # coords y = 0 references the basket, y min = -5, court measures paint 19 ft out from baseline
+      ( (x > 17) & (x < 34) ) & (y <= 19), TRUE, 
+      FALSE
+    )
+  )
 }
 
 made.shot <- function(shot, pts){
-    #ingest a boolean to determine a shot was taken, 
-    #and a number to determine if pts were scored
-    if((shot == FALSE) | (pts <= 0)){
-        return(FALSE)
-    }
-    else if(pts > 0){
-        return(TRUE)
-    }
+  #ingest a boolean to determine a shot was taken, 
+  #and a number to determine if pts were scored
+  ifelse((shot == FALSE) | (pts <= 0), FALSE, TRUE)
 }
 
 off.rebound <- function(text){
     # searches pbp text for offensive rebs
-    if(
-        (grepl("offensive team rebound", text, fixed = TRUE)) | 
-        (grepl("offensive rebound", text, fixed = TRUE))
-    ){return(TRUE)}
-    else{return(FALSE)}
+    ifelse((grepl("offensive team rebound", text, fixed = TRUE)) | (grepl("offensive rebound", text, fixed = TRUE)),
+           TRUE,
+           FALSE
+    )
 }
 
 def.rebound <- function(text){
     # searches pbp text for deffensive rebs
-    if(
-        (grepl("defensive team rebound", text, fixed = TRUE)) | 
-        (grepl("defensive rebound", text, fixed = TRUE))
-    ){return(TRUE)}
-    else{return(FALSE)}
-}
+    ifelse((grepl("defensive team rebound", text, fixed = TRUE)) | (grepl("defensive rebound", text, fixed = TRUE)),
+           TRUE,
+           FALSE
+    )
+}  
 #####
 
 ####################

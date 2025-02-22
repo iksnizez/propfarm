@@ -96,7 +96,7 @@ if(nrow(bref_pos_manual_edits)>0){
 #############
 # boxscore  will be used to access players that are playing today and agg stats
 boxscore.player <- load_nba_player_box(s) %>% 
-                        filter(game_date < search.date & team_name != "All-Stars") %>% 
+                        filter(game_date < search.date & team_id <=32) %>% 
                         distinct()
 boxscore.player %>% select(game_date) %>% filter(row_number()==1) %>% pull()
 

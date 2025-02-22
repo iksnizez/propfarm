@@ -413,7 +413,7 @@ class playerStatModel():
 #####################################################
 ###### CALCULATING FEATURES
 #####################################################
-    def get_player_home_adv(self, use_default=True):
+    def get_player_home_adv(self, use_default=True, sleep_time = 2):
         """
         use_default = True; will just use a default home court adjuster for all players
 
@@ -452,7 +452,8 @@ class playerStatModel():
                 all_splits.append(df_splits)
                 print(count, '/', total, 'player splits..')
                 count += 1
-                time.sleep(2)
+                sleeper = np.random.randint(sleep_time, 5)
+                time.sleep(sleeper)
 
                 ### TODO rest splits and adjusters
                 ############### DF IDX 6 is days rest splits
@@ -524,6 +525,8 @@ class playerStatModel():
     
     def calculate_model_inputs(self):
         df = self.df_players.copy()
+
+        # actual stat processing
         df.loc[:,'FG2M'] = df['FGM'] - df['FG3M']
         df.loc[:,'FG2A'] = (df['FGA'] - df['FG3A'])#.clip(.1, 100)
         df.loc[:,'FG3A'] = (df['FG3A'])#.clip(.1, 100)
@@ -535,7 +538,14 @@ class playerStatModel():
         df.loc[:,'shotshareFG3A'] = df['FG3A'] / df['FGA_FTA']
         df.loc[:,'shotshareFTA'] = df['FTA'] / df['FGA_FTA']
 
-        # expected stats
+        df.loc[:,'PRA'] = df['PTS'] + df['REB'] + df['AST']
+        df.loc[:,'PR'] = df['PTS'] + df['REB']
+        df.loc[:,'PA'] = df['PTS'] + df['AST']
+        df.loc[:,'RA'] = df['REB'] + df['AST']
+        df.loc[:,'SB'] = df['STL'] + df['BLK']
+
+        # expected stats processing
+        # ----- REB -----
         df.loc[:,'expReb'] = np.where(df['homeTeam'] == 1,
             ((df['MINadj'] * df['PACEadj'] * df['OREB_HOMEadj'] * df['OREB'] * df['OREBadj']) + 
              (df['MINadj'] * df['PACEadj'] * df['DREB_HOMEadj'] * df['DREB'] * df['DREBadj'])
@@ -544,12 +554,12 @@ class playerStatModel():
              (df['MINadj'] * df['PACEadj'] * df['DREB_ROADadj'] * df['DREB'] * df['DREBadj'])
             )
         )
-        
+        # ----- AST -----
         df.loc[:,'expAst'] = np.where(df['homeTeam'] == 1,
             (df['MINadj'] * df['PACEadj'] * df['AST_HOMEadj'] * df['AST'] * df['ASTadj']),
             (df['MINadj'] * df['PACEadj'] * df['AST_ROADadj'] * df['AST'] * df['ASTadj']) 
         )
-         
+        # ----- SHOT TYPES ----- 
         df.loc[:,'expFG2A'] = np.where(df['homeTeam'] == 1,
             df['MINadj'] * df['PACEadj'] * df['FG2M_HOMEadj'] * df['PTSadj'] * df['FGA_FTA'] * df['shotshareFG2A'],
             df['MINadj'] * df['PACEadj'] * df['FG2M_ROADadj'] * df['PTSadj'] * df['FGA_FTA'] * df['shotshareFG2A']
@@ -572,12 +582,31 @@ class playerStatModel():
         df.loc[:,'expFTA'] = df['expFTA'].fillna(0)        
         df.loc[:,'expFTM'] = df['expFTA'] * df['FT_PCT'] 
 
-
         df.loc[:,'expFGM_FTM'] = df['expFG2M'] + df['expFG3M'] + df['expFTM']
         df.loc[:,'expFGA_FTA'] = df['expFG2A'] + df['expFG3A'] + df['expFTA']
 
+        # ----- PTS -----
         df.loc[:,'expPts'] = (df['expFG2M'] * 2) + (df['expFG3M'] * 3) + df['expFTM']
 
+        # ----- STL -----
+        df.loc[:,'expStl'] = np.where(df['homeTeam'] == 1,
+            (df['MINadj'] * df['PACEadj'] * df['STL_HOMEadj'] * df['STL']), #TODO * df['STLadj']),
+            (df['MINadj'] * df['PACEadj'] * df['STL_ROADadj'] * df['STL']) #TODO * df['STLadj']) 
+        )        
+
+        # ----- BLK -----
+        df.loc[:,'expBlk'] = np.where(df['homeTeam'] == 1,
+            (df['MINadj'] * df['PACEadj'] * df['BLK_HOMEadj'] * df['BLK']), #TODO * df['BLKadj']),
+            (df['MINadj'] * df['PACEadj'] * df['BLK_ROADadj'] * df['BLK']) #TODO * df['BLKadj']) 
+        )
+
+        ### ----- COMBO STATS -----
+        df.loc[:,'expPra'] = df['expPts'] + df['expReb'] + df['expAst']
+        df.loc[:,'expPr'] = df['expPts'] + df['expReb']
+        df.loc[:,'expPa'] = df['expPts'] + df['expAst']
+        df.loc[:,'expRa'] = df['expReb'] + df['expAst']
+        df.loc[:,'expSb'] = df['expStl'] + df['expBlk']
+        
         self.df_players = df.copy()
         return
 
@@ -630,11 +659,11 @@ class playerStatModel():
         df['threes_line'] = df['threes_line'].fillna(0).astype(float)
 
         # Simulate FG3 made
-        sim_fg3m = np.random.binomial(df['FG3A'].values[:, None], df['FG3_PCT'].values[:, None], (len(df), self.num_simulations))
-        self.sim_fg3m = sim_fg3m
+        ## can use the previously simmed 3 from the points section
+        #sim_fg3m = np.random.binomial(df['FG3A'].values[:, None], df['FG3_PCT'].values[:, None], (len(df), self.num_simulations))
 
         # Compute probability of exactly x FG3 made
-        df['FG3MoProb'] = (sim_fg3m >= df['threes_line'].values[:, None]).sum(axis=1) / self.num_simulations
+        df['FG3MoProb'] = (fg3m >= df['threes_line'].values[:, None]).sum(axis=1) / self.num_simulations
         df['FG3MoProb'] = df['FG3MoProb'].fillna(0).astype(float)
         df.loc[:,'FG3MoOdds'] =  df['FG3MoProb'].apply(convert_probability_to_ameri_odds)
         df.loc[:,'FG3MoOdds_deci'] = df['FG3MoProb'].apply(convert_probability_to_deci_odds)
@@ -649,13 +678,57 @@ class playerStatModel():
 
         df.loc[:,'REBoOdds'] =  df['REBoProb'].apply(convert_probability_to_ameri_odds)
         df.loc[:,'REBoOdds_deci'] = df['REBoProb'].apply(convert_probability_to_deci_odds)
-
+        
         # ----- AST ----- 
         sim_ast = np.random.poisson(df['expAst'].values[:, None], (len(df), self.num_simulations))
         df['ASToProb'] = (sim_ast >= df['ast_line'].values[:, None]).sum(axis=1) / self.num_simulations
 
         df.loc[:,'ASToOdds'] =  df['ASToProb'].apply(convert_probability_to_ameri_odds)
         df.loc[:,'ASToOdds_deci'] = df['ASToProb'].apply(convert_probability_to_deci_odds)
+
+        # ----- STL ----- 
+        sim_ast = np.random.poisson(df['expStl'].values[:, None], (len(df), self.num_simulations))
+        df['STLoProb'] = (sim_ast >= df['stl_line'].values[:, None]).sum(axis=1) / self.num_simulations
+
+        df.loc[:,'STLoOdds'] =  df['STLoProb'].apply(convert_probability_to_ameri_odds)
+        df.loc[:,'STLoOdds_deci'] = df['STLoProb'].apply(convert_probability_to_deci_odds)
+
+        # ----- BLK ----- 
+        sim_ast = np.random.poisson(df['expBlk'].values[:, None], (len(df), self.num_simulations))
+        df['BLKoProb'] = (sim_ast >= df['blk_line'].values[:, None]).sum(axis=1) / self.num_simulations
+
+        df.loc[:,'BLKoOdds'] =  df['BLKoProb'].apply(convert_probability_to_ameri_odds)
+        df.loc[:,'BLKoOdds_deci'] = df['BLKoProb'].apply(convert_probability_to_deci_odds)
+
+        ### ----- COMBO STATS ----- ####
+        # ----- PRA -----
+        sim_pra = sim_pts + sim_reb + sim_ast
+        df['PRAoProb'] = (sim_pra >= df['pra_line'].values[:, None]).sum(axis=1) / self.num_simulations
+        df.loc[:,'PRAoOdds'] = df['PRAoProb'].apply(convert_probability_to_ameri_odds)
+        df.loc[:,'PRAoOdds_deci'] = df['PRAoProb'].apply(convert_probability_to_deci_odds)
+
+        # ----- PR -----
+        sim_pr = sim_pts + sim_reb
+        df['PRoProb'] = (sim_pr >= df['pr_line'].values[:, None]).sum(axis=1) / self.num_simulations
+        df.loc[:,'PRoOdds'] = df['PRoProb'].apply(convert_probability_to_ameri_odds)
+        df.loc[:,'PRoOdds_deci'] = df['PRoProb'].apply(convert_probability_to_deci_odds)
+
+        # ----- PA -----
+        sim_pa = sim_pts + sim_ast
+        df['PAoProb'] = (sim_pa >= df['pa_line'].values[:, None]).sum(axis=1) / self.num_simulations
+        df.loc[:,'PAoOdds'] = df['PAoProb'].apply(convert_probability_to_ameri_odds)
+        df.loc[:,'PAoOdds_deci'] = df['PAoProb'].apply(convert_probability_to_deci_odds)
+
+        # ----- RA -----
+        sim_ra = sim_reb + sim_ast
+        df['RAoProb'] = (sim_ra >= df['ra_line'].values[:, None]).sum(axis=1) / self.num_simulations
+        df.loc[:,'RAoOdds'] = df['RAoProb'].apply(convert_probability_to_ameri_odds)
+        df.loc[:,'RAoOdds_deci'] = df['RAoProb'].apply(convert_probability_to_deci_odds)
+
+        # ----- SB -----
+        df['SBoProb'] = (sim_ra >= df['sb_line'].values[:, None]).sum(axis=1) / self.num_simulations
+        df.loc[:,'SBoOdds'] = df['SBoProb'].apply(convert_probability_to_ameri_odds)
+        df.loc[:,'SBoOdds_deci'] = df['SBoProb'].apply(convert_probability_to_deci_odds)
 
         self.df_players = df.copy()
         return 
