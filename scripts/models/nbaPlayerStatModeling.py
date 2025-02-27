@@ -10,8 +10,8 @@ from nba_api.stats.endpoints import ScoreboardV2
 from nba_api.stats.endpoints import PlayerDashboardByGeneralSplits
 
 # models
-from scipy.stats import poisson, binom, nbinom
-from scipy.signal import convolve
+#from scipy.stats import poisson, binom, nbinom
+
 
 #TODO:
 ###### immediate
@@ -35,8 +35,8 @@ def connect_to_database(database_creds = '../../../../Notes-General/config.txt')
     league = "nba"
     pymysql_conn_str = creds['pymysql'][league]
 
-    conn = create_engine(pymysql_conn_str)
-    return conn
+    engine = create_engine(pymysql_conn_str)
+    return engine
 
 def calculate_reb_adjustment(opp_reb_pct, league_avg_reb_pct):
     
@@ -237,7 +237,9 @@ class playerStatModel():
     def get_players_playing(self,
         # use format to input perMode (per), season id (sid), and team id (tid)
         url_base_nba_player_stat = 'https://stats.nba.com/stats/leaguedashplayerstats?College=&Conference=&Country=&DateFrom=&DateTo=&Division=&DraftPick=&DraftYear=&GameScope=&GameSegment=&Height=&LastNGames=0&LeagueID=00&Location=&MeasureType=Base&Month=0&OpponentTeamID=0&Outcome=&PORound=0&PaceAdjust=N&PerMode={per}&Period=0&PlayerExperience=&PlayerPosition=&PlusMinus=N&Rank=N&Season={sid}&SeasonSegment=&SeasonType=Regular+Season&ShotClockRange=&StarterBench=&TeamID={tid}&TwoWay=0&VsConference=&VsDivision=&Weight=',
-        minute_cutoff = 15.0
+        minute_cutoff = 15.0,
+        season = '2025',
+        pull_players_from_nbaapi = False
     ):
         """
         using the team ids from get_teams_playing(), aggregate player data stats of interest
@@ -250,44 +252,100 @@ class playerStatModel():
         """
         player_stats_list = []
         teams = self.list_team_ids
+        
+        # pulls data from NBA website
+        if pull_players_from_nbaapi:
+        
+            for i in range(len(teams)):
+                team_id = teams[i]
+                roster = []
+                player_info_url = url_base_nba_player_stat.format(
+                    per = self.perMode,
+                    sid = self.season, 
+                    tid = team_id
+                ) 
+                
+                # only need to grab column headers on the first pass
+                if i == 0:
+                    response = requests.get(url=player_info_url, headers=self.HEADERS).json()
+                    columns_player_stats = response['resultSets'][0]['headers']
+                else:
+                    response = requests.get(url=player_info_url, headers=self.HEADERS).json()
 
-        for i in range(len(teams)):
-            team_id = teams[i]
-            roster = []
-            player_info_url = url_base_nba_player_stat.format(
-                per = self.perMode,
-                sid = self.season, 
-                tid = team_id
-            ) 
-            
-            # only need to grab column headers on the first pass
-            if i == 0:
-                response = requests.get(url=player_info_url, headers=self.HEADERS).json()
-                columns_player_stats = response['resultSets'][0]['headers']
-            else:
-                response = requests.get(url=player_info_url, headers=self.HEADERS).json()
+                for j in response['resultSets'][0]['rowSet']:
+                    roster.append(j)
+                
+                columns_players_keep = [
+                'PLAYER_ID', 'PLAYER_NAME', 'TEAM_ID', 'TEAM_ABBREVIATION', 'MIN', 'FGM', 'FGA', 
+                'FG_PCT', 'FG3M', 'FG3A', 'FG3_PCT', 'FTM', 'FTA', 'FT_PCT', 'OREB', 'DREB', 'REB', 
+                'AST','TOV', 'STL', 'BLK', 'BLKA', 'PF', 'PFD', 'PTS', 'PLUS_MINUS'
+                ]
+                temp = pd.DataFrame(roster, columns = columns_player_stats)
+                # players stay in team data even after switching teams but their team_abbreviation changes
+                # gather the most common team abbreviation on the team (it should be the actual team matching the id)
+                correct_team = temp['TEAM_ABBREVIATION'].value_counts()[:1].index.tolist()
+                #filter out the non matching players
+                temp = temp[temp['TEAM_ABBREVIATION'].isin(correct_team)]
+                player_stats_list.append(temp)
 
-            for j in response['resultSets'][0]['rowSet']:
-                roster.append(j)
-            
+                time.sleep(1)
+        
+            df_players = pd.concat(player_stats_list)
+            df_players = df_players[df_players['TEAM_ID'].isin(teams)][columns_players_keep]
+        
+        # pull from database - pulls players individual game box scores and calcs totals -> averages
+        else:
+            # Generate placeholders dynamically based on number of teams in game list 
+            placeholders = ', '.join(['%s'] * len(self.list_team_ids))
+
+            query = f"""
+            SELECT 
+                athlete_id AS PLAYER_ID, game_date, athlete_display_name AS PLAYER_NAME, nbaTid AS TEAM_ID,
+                team_abbreviation AS TEAM_ABBREVIATION, minutes AS MIN, field_goals_made AS FGM,
+                field_goals_attempted AS FGA, 
+                three_point_field_goals_made AS FG3M, three_point_field_goals_attempted AS FG3A,
+                free_throws_made AS FTM, free_throws_attempted AS FTA,  offensive_rebounds AS OREB,
+                defensive_rebounds AS DREB, rebounds AS REB, assists AS AST, turnovers AS TOV,
+                steals AS STL, blocks AS BLK, fouls AS PF, points AS PTS, CONVERT(plus_minus, DOUBLE) AS PLUS_MINUS,
+                CASE WHEN home_away = 'home' THEN 'Home' ELSE 'Road' END AS GROUP_VALUE
+            FROM playerbox 
+            JOIN teams t on team_id = t.espnTid 
+            WHERE season = %s AND t.nbaTid IN ({placeholders}) AND team_id <= 32;
+            """
+            params = tuple([season] + self.list_team_ids)
+
+            engine = connect_to_database(database_creds = '../../../../Notes-General/config.txt')
+            with engine.connect() as conn:
+                self.df_player_boxscores = pd.read_sql_query(
+                    sql = query,
+                    con = conn,
+                    params = params
+                )
+
+            # players old teams need to be removed or blended
+            # TODO MAYBE - blend players stats instead of only taking new teams
+            # Step 1: Get most recent record per player
+            latest_teams = self.df_player_boxscores.loc[self.df_player_boxscores.groupby('PLAYER_ID')['game_date'].idxmax(), ['PLAYER_ID', 'TEAM_ID']]
+
+            # Step 2: Filter all rows where `pid` has the same `tid` as the latest record
+            self.df_player_boxscores = self.df_player_boxscores.merge(latest_teams, on= ['PLAYER_ID', 'TEAM_ID'])
+
             columns_players_keep = [
-            'PLAYER_ID', 'PLAYER_NAME', 'TEAM_ID', 'TEAM_ABBREVIATION', 'MIN', 'FGM', 'FGA', 
-            'FG_PCT', 'FG3M', 'FG3A', 'FG3_PCT', 'FTM', 'FTA', 'FT_PCT', 'OREB', 'DREB', 'REB', 
-            'AST','TOV', 'STL', 'BLK', 'BLKA', 'PF', 'PFD', 'PTS', 'PLUS_MINUS'
+                'PLAYER_ID', 'PLAYER_NAME', 'TEAM_ID', 'TEAM_ABBREVIATION', 'MIN', 'FGM', 'FGA', 
+                'FG3M', 'FG3A', 'FTM', 'FTA',  'OREB', 'DREB', 'REB', 'AST','TOV', 'STL', 'BLK',  
+                'PF', 'PTS', 'PLUS_MINUS', #'BLKA',  'PFD' # these 2 aren't in the hoopR boxscores but are in the nba_api
             ]
-            temp = pd.DataFrame(roster, columns = columns_player_stats)
-            # players stay in team data even after switching teams but their team_abbreviation changes
-            # gather the most common team abbreviation on the team (it should be the actual team matching the id)
-            correct_team = temp['TEAM_ABBREVIATION'].value_counts()[:1].index.tolist()
-            #filter out the non matching players
-            temp = temp[temp['TEAM_ABBREVIATION'].isin(correct_team)]
-            player_stats_list.append(temp)
+            
+            df_players = self.df_player_boxscores[columns_players_keep].copy()
 
-            time.sleep(1)
+            df_players = df_players.groupby(['PLAYER_ID','PLAYER_NAME','TEAM_ID', 'TEAM_ABBREVIATION']).mean().reset_index()
+            df_players.loc[:,'FG_PCT'] = df_players['FGM'] / df_players['FGA']
+            #df_players.loc[:,'FG2_PCT'] = df_players['FG2M'] / df_players['FG2A']            
+            df_players.loc[:,'FG3_PCT'] = df_players['FG3M'] / df_players['FG3A']
+            df_players.loc[:,'FT_PCT'] = df_players['FTM'] / df_players['FTA']
 
 
-        df_players = pd.concat(player_stats_list)
-        df_players = df_players[df_players['TEAM_ID'].isin(teams)][columns_players_keep]
+
         df_players = df_players[df_players['MIN'] >= minute_cutoff]
 
         ### processing
@@ -370,7 +428,7 @@ class playerStatModel():
 
 
         query = """
-            SELECT p.nbaId PLAYER_ID, p.player, o.prop, o.line, o.oOdds, o.uOdds  
+            SELECT p.hooprId PLAYER_ID, p.player, o.prop, o.line, o.oOdds, o.uOdds  
             FROM odds o
             JOIN players p ON o.playerId = p.actnetId
             WHERE DATE(o.date) = %s;
@@ -413,7 +471,7 @@ class playerStatModel():
 #####################################################
 ###### CALCULATING FEATURES
 #####################################################
-    def get_player_home_adv(self, use_default=True, sleep_time = 2):
+    def get_player_home_adv(self, use_default=False, sleep_time = 2):
         """
         use_default = True; will just use a default home court adjuster for all players
 
@@ -434,7 +492,10 @@ class playerStatModel():
             )
         
         else:
+            
+
             list_players = list(self.df_players['PLAYER_ID'].unique())
+            """
             # gather required data to calculate home advantage
             all_splits = []
             count = 1
@@ -461,10 +522,20 @@ class playerStatModel():
 
             # Combine all players into a single DataFrame
             df_location_splits = pd.concat(all_splits, ignore_index=True)
-
+            """
+            df_location_splits = self.df_player_boxscores.copy()
+            
+            # getting home/away averages
+            #df_location_splits = df_location_splits.groupby(['PLAYER_ID','PLAYER_NAME','TEAM_ID', 'TEAM_ABBREVIATION', 'GROUP_VALUE']).mean().reset_index()
+            group_cols = ['PLAYER_ID', 'PLAYER_NAME', 'TEAM_ID', 'TEAM_ABBREVIATION', 'GROUP_VALUE']
+            avg_cols = ['MIN', 'FGM', 'FGA', 'FG3M', 'FG3A', 'FTM', 'FTA', 'OREB', 'DREB', 'REB',
+                        'AST', 'TOV', 'STL', 'BLK', 'PTS'] #'PF', 'PLUS_MINUS']
+            df_location_splits.loc[:,'GP'] =  df_location_splits['PLAYER_ID']
+            df_location_splits = df_location_splits.groupby(group_cols, as_index=False).agg({**{col: 'mean' for col in avg_cols}, 'GP': 'count'}).reset_index()
+            
             columns_splits = [
                 'PLAYER_ID', 'GROUP_VALUE','GP', 'MIN', 'FGM', 'FGA', 'FG3M', 'FG3A', 'FTM', 
-                'FTA', 'OREB', 'DREB', 'REB', 'AST', 'TOV', 'STL', 'BLK', 'BLKA', 'PTS'
+                'FTA', 'OREB', 'DREB', 'REB', 'AST', 'TOV', 'STL', 'BLK', 'PTS'
             ]
 
             df_location_splits = df_location_splits[columns_splits]
@@ -483,7 +554,7 @@ class playerStatModel():
             # Calculate per-game averages (only for stats that need it)
             cols_to_avg = [
                 'MIN', 'FGM', 'FGA', 'FG2M', 'FG2A', 'FG3M', 'FG3A', 'FTM', 'FTA', 'OREB', 
-                'DREB', 'REB', 'AST', 'TOV', 'STL', 'BLK', 'BLKA', 'PTS'
+                'DREB', 'REB', 'AST', 'TOV', 'STL', 'BLK', 'PTS'
             ]
 
             #the data pulled from PlayerDashboardByGeneralSplits() is coming through as TOTALs, adjust to per game
@@ -554,11 +625,15 @@ class playerStatModel():
              (df['MINadj'] * df['PACEadj'] * df['DREB_ROADadj'] * df['DREB'] * df['DREBadj'])
             )
         )
+        df.loc[:,'expReb'] = df['expReb'].fillna(0).astype(float)
+
         # ----- AST -----
         df.loc[:,'expAst'] = np.where(df['homeTeam'] == 1,
             (df['MINadj'] * df['PACEadj'] * df['AST_HOMEadj'] * df['AST'] * df['ASTadj']),
             (df['MINadj'] * df['PACEadj'] * df['AST_ROADadj'] * df['AST'] * df['ASTadj']) 
         )
+        df.loc[:,'expAst'] = df['expAst'].fillna(0).astype(float)
+
         # ----- SHOT TYPES ----- 
         df.loc[:,'expFG2A'] = np.where(df['homeTeam'] == 1,
             df['MINadj'] * df['PACEadj'] * df['FG2M_HOMEadj'] * df['PTSadj'] * df['FGA_FTA'] * df['shotshareFG2A'],
@@ -592,20 +667,22 @@ class playerStatModel():
         df.loc[:,'expStl'] = np.where(df['homeTeam'] == 1,
             (df['MINadj'] * df['PACEadj'] * df['STL_HOMEadj'] * df['STL']), #TODO * df['STLadj']),
             (df['MINadj'] * df['PACEadj'] * df['STL_ROADadj'] * df['STL']) #TODO * df['STLadj']) 
-        )        
+        )
+        df.loc[:,'expStl'] = df['expStl'].fillna(0).astype(float)        
 
         # ----- BLK -----
         df.loc[:,'expBlk'] = np.where(df['homeTeam'] == 1,
             (df['MINadj'] * df['PACEadj'] * df['BLK_HOMEadj'] * df['BLK']), #TODO * df['BLKadj']),
             (df['MINadj'] * df['PACEadj'] * df['BLK_ROADadj'] * df['BLK']) #TODO * df['BLKadj']) 
         )
+        df.loc[:,'expBlk'] = df['expBlk'].fillna(0).astype(float)
 
         ### ----- COMBO STATS -----
-        df.loc[:,'expPra'] = df['expPts'] + df['expReb'] + df['expAst']
-        df.loc[:,'expPr'] = df['expPts'] + df['expReb']
-        df.loc[:,'expPa'] = df['expPts'] + df['expAst']
-        df.loc[:,'expRa'] = df['expReb'] + df['expAst']
-        df.loc[:,'expSb'] = df['expStl'] + df['expBlk']
+        df.loc[:,'expPra'] = (df['expPts'] + df['expReb'] + df['expAst']).fillna(0).astype(float)
+        df.loc[:,'expPr'] = (df['expPts'] + df['expReb']).fillna(0).astype(float)
+        df.loc[:,'expPa'] = (df['expPts'] + df['expAst']).fillna(0).astype(float)
+        df.loc[:,'expRa'] = (df['expReb'] + df['expAst']).fillna(0).astype(float)
+        df.loc[:,'expSb'] = (df['expStl'] + df['expBlk']).fillna(0).astype(float)
         
         self.df_players = df.copy()
         return
@@ -675,7 +752,7 @@ class playerStatModel():
         # ----- REB ----- 
         sim_reb = np.random.poisson(df['expReb'].values[:, None], (len(df), self.num_simulations))
         df['REBoProb'] = (sim_reb >= df['reb_line'].values[:, None]).sum(axis=1) / self.num_simulations
-
+        
         df.loc[:,'REBoOdds'] =  df['REBoProb'].apply(convert_probability_to_ameri_odds)
         df.loc[:,'REBoOdds_deci'] = df['REBoProb'].apply(convert_probability_to_deci_odds)
         
