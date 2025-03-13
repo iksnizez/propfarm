@@ -22,6 +22,8 @@ py-ball = "*"
 openpyxl = "*"
 pymc3 = "*"
 dash = "*"
+statsmodels = "*"
+scikit-learn = "*"
 
 [dev-packages]
 ipykernel = "*"

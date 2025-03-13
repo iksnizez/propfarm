@@ -1,16 +1,18 @@
 import pandas as pd
 import json, time, re
-from datetime import datetime
+from datetime import datetime, timedelta
 
+from nba_api.stats.endpoints import leaguegamefinder
 from sqlalchemy import create_engine
 
 from bs4 import BeautifulSoup as bs
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support.wait import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.wait import WebDriverWait # used to wait for elements - popups
+from selenium.webdriver.support import expected_conditions as EC  # used to wait for elements - popups
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import NoSuchElementException
+from selenium.webdriver.support.ui import Select # used for drop down
+#from selenium.common.exceptions import NoSuchElementException
 
 import warnings 
 warnings.filterwarnings('ignore')
@@ -75,6 +77,10 @@ class scraper():
             "Dario .*":"dario saric", "Alperen .*":"alperen sengun", "Luka.*amanic":"luka samanic"
         }
 
+        # nba site xpaths
+        self.buttonXpath = "/html/body/div[1]/div[2]/div[2]/div[3]/section[2]/div/div[2]/div[2]/div[1]/div[3]/div/label/div/select"#/option[1]"
+        self.cookieXpath = '//*[@id="onetrust-accept-btn-handler"]'
+
     ##################
     # general functions
     def open_browser(self, browser_path = None, retry_delay = 5, retry_attempts = 3):
@@ -88,6 +94,28 @@ class scraper():
 
         return driver
     
+    def accept_nba_cookies_browser(self, driver):
+        try:
+            WebDriverWait(driver, timeout=5).until(lambda d: d.find_element("xpath", self.cookieXpath))
+            cookiesButton = driver.find_element("xpath", self.cookieXpath)
+            cookiesButton.click()
+        except:
+            pass
+        return
+    
+    def select_nba_dropdown_browser(self, driver, x_scroll_int = 0, y_scroll_int = 375):
+        try:
+            driver.execute_script(f"window.scrollBy({x_scroll_int}, {y_scroll_int});")
+            WebDriverWait(driver, timeout=20).until(lambda d: d.find_element("xpath", self.buttonXpath))
+            pagenationFilter = driver.find_element("xpath", self.buttonXpath)
+            pagenationFilter.click()
+        except:
+            print('drop down not found...')
+            #pagenationFilter = driver.find_element("xpath", self.buttonXpath)
+            #driver.execute_script("arguments[0].click();", pagenationFilter)
+            pass
+        return
+
     def export_database(self, dataframe, database_table, connection_string):
 
         try:
@@ -116,6 +144,27 @@ class scraper():
         for pattern, replacement in self.suffix_replace.items():
             value = re.sub(pattern, replacement, value, flags=re.IGNORECASE)
         return value
+
+    def get_last_game_date(self, season = '2024-25'):
+    
+        # Fetch all games for the current season
+        gamefinder = leaguegamefinder.LeagueGameFinder(season_nullable=season, league_id_nullable='00')
+        games = gamefinder.get_data_frames()[0]
+
+        # Convert GAME_DATE to datetime and find the most recent date
+        ##### this data returns all games for the season
+        ##### SEASON_ID: is an identifier followed by starting year of season so xYYYY 
+        ##### for 24-25 season: 12024 = preseason, 22024=reg, 32024=Allstar weekend , 
+        ##### 42024 = playoffs, 52024 = play-ins, 62024 = IST championship 
+        games.loc[:,'GAME_DATE'] = pd.to_datetime(games['GAME_DATE'])
+        games = games[games['SEASON_ID'].astype(str).str.startswith(('2', '4', '5'))] # filter to regular season and all playoffs
+        last_game_date = games['GAME_DATE'].max()
+
+        self.games = games.copy()
+        self.last_game_date = last_game_date.date()
+        print("Last day with games played:", last_game_date.date())
+        return 
+
 
     ################
     # nba com scrapes
@@ -161,6 +210,9 @@ class scraper():
                 # get html page source data
                 url = base_url.format(playtype=play, sideofball=s, type= season_type)
                 driver.get(url)
+                
+                self.accept_nba_cookies_browser(driver)
+                
                 time.sleep(3)
                 ps = driver.page_source
                 soup = bs(ps)
@@ -239,12 +291,12 @@ class scraper():
 
     def get_nba_team_shotzone_data(            
             self,
-            base_url = 'https://www.nba.com/stats/teams/{sideOfBall}?DistanceRange=By+Zone&LastNGames={lastNgames}&SeasonType={type}&DateTo={endDate}', 
+            #base_url = 'https://www.nba.com/stats/teams/{sideOfBall}?DistanceRange=By+Zone&LastNGames={lastNgames}&SeasonType={type}&DateTo={endDate}', 
+            base_url = 'https://www.nba.com/stats/teams/{sideOfBall}?DistanceRange=By+Zone&SeasonType={type}&DateFrom={startDate}&DateTo={endDate}&PerMode=Totals', 
             sides = {'offensive':'shooting', 'defensive':'opponent-shooting'},
             season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
-            lastNgames = 10,
             database_table = 'statsteamshotzones',
-            endDate = None
+            dateRange = None
     ):
         """
         function to scrape nba.com team shot zone stats on both sides of the ball
@@ -273,27 +325,31 @@ class scraper():
             'tid','sob'
         ]
 
-        #buttonXpath = "/html/body/div[1]/div[2]/div[2]/div[3]/section[2]/div/div[2]/div[2]/div[1]/div[3]/div/label/div/select/option[1]"
-
-        lastNgames = str(lastNgames)
-
         driver = self.open_browser()
         data = []
         url_errors = []
 
-        if pd.isnull(endDate):
-            endDate_url = self.meta_data['today_dt'].strftime('%m/%d/%Y')
+        if len(dateRange) != 2:
+            print('need start and end date provided in list...')
+            return
         else:
+            startDate = pd.to_datetime(dateRange[0]).date()
+            startDate_url = startDate.strftime('%m/%d/%Y')
+            endDate = pd.to_datetime(dateRange[1]).date()
             endDate_url = endDate.strftime('%m/%d/%Y')
 
         for s, v in sides.items():       
-            url = base_url.format(sideOfBall=v, lastNgames=lastNgames, type=season_type, endDate = endDate_url)
+            #url = base_url.format(sideOfBall=v, lastNgames=lastNgames, type=season_type, endDate = endDate_url)
+            url = base_url.format(sideOfBall=v, type=season_type, startDate= startDate_url, endDate = endDate_url)
             #url = "https://www.nba.com/stats/teams/shooting?DistanceRange=By+Zone&SeasonType=Playoffs&DateFrom=04%2F29%2F2024&DateTo=05%2F08%2F2024"
             #url = "https://www.nba.com/stats/teams/opponent-shooting?DistanceRange=By+Zone&SeasonType=Playoffs&DateFrom=04%2F29%2F2024&DateTo=05%2F08%2F2024"
             
             # get html page source data
             driver.get(url)
-            time.sleep(3)
+            
+            self.accept_nba_cookies_browser(driver)
+
+            time.sleep(4)
             ps = driver.page_source
             soup = bs(ps)
             
@@ -325,7 +381,7 @@ class scraper():
                     row.append(s)
                     data.append(row)
             except:
-                url_errors.append([{s:v}, lastNgames, season_type])
+                url_errors.append([{s:v}, season_type, startDate, endDate])
                 continue
 
         driver.close()
@@ -354,7 +410,9 @@ class scraper():
             self.scrape_error_flag = True
             self.scrape_errors[database_table]['url'] = url_errors
 
-        print('nba team shot zone scraped...')
+        defCount = dfZoneShooting[dfZoneShooting['sob']=='offensive'].shape[0]
+        offCount = dfZoneShooting[dfZoneShooting['sob']=='defensive'].shape[0]
+        print('nba team shot zone scraped', offCount, 'offensive, ', defCount, 'defensive loaded...')
         return
 
     def get_nba_team_stats(
@@ -403,6 +461,9 @@ class scraper():
 
             # get html page source data
             driver.get(url)
+
+            self.accept_nba_cookies_browser(driver)
+
             time.sleep(3)
             ps = driver.page_source
             soup = bs(ps)
@@ -513,7 +574,6 @@ class scraper():
         url_errors = []
         today = self.meta_data['today']
 
-        buttonXpath = "/html/body/div[1]/div[2]/div[2]/div[3]/section[2]/div/div[2]/div[2]/div[1]/div[3]/div/label/div/select/option[1]"
         for s in sides:
             for play in play_types:
                 # get html page source data
@@ -521,26 +581,20 @@ class scraper():
                 
                 # get html page source data
                 driver.get(url)
-                #time.sleep(4)
-                
-                ## need to open page then change filter from 1 to -1 so that all players load
-                ## div class="Crom_cromSettings__ak6Hd"  > 
-                #####select class="DropDown_select__4pIg9"
-                #######option value=-1
-                try:
-                    WebDriverWait(driver, timeout=20).until(lambda d: d.find_element("xpath", buttonXpath))
-                    pagenationFilter = driver.find_element("xpath", buttonXpath)
-                    pagenationFilter.click()
-                except:
-                    #pagenationFilter = driver.find_element("xpath", buttonXpath)
-                    #driver.execute_script("arguments[0].click();", pagenationFilter)
-                    pass
+                time.sleep(2)
+
+                self.accept_nba_cookies_browser(driver)
+
+                self.select_nba_dropdown_browser(
+                    driver,
+                    x_scroll_int = 0, 
+                    y_scroll_int = 520
+                )
                 
                 time.sleep(1)
                 ps = driver.page_source
                 soup = bs(ps)
 
-                    
                 # extract table holding the data
                 try:
                     tables = soup.find_all('table')
@@ -643,11 +697,12 @@ class scraper():
 
     def get_nba_player_shotzone_data(            
             self,
-            base_url = 'https://www.nba.com/stats/players/shooting?DistanceRange=By+Zone&LastNGames={lastNgames}&SeasonType={type}&DateTo={endDate}', 
+            #base_url = 'https://www.nba.com/stats/players/shooting?DistanceRange=By+Zone&LastNGames={lastNgames}&SeasonType={type}&DateTo={endDate}', 
+            base_url = 'https://www.nba.com/stats/players/shooting?DistanceRange=By+Zone&SeasonType={type}&DateFrom={startDate}&DateTo={endDate}&PerMode=Totals', 
             season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
-            lastNgames = 10,
+            lastNgames = 0,
             database_table = 'statsplayershotzones',
-            endDate = None
+            dateRange = None
     ):
         """
         function to scrape nba.com player shot zone stats on offense
@@ -676,36 +731,35 @@ class scraper():
             'aboveBreak3FgPct','pid','tid'
         ]
 
-        buttonXpath = "/html/body/div[1]/div[2]/div[2]/div[3]/section[2]/div/div[2]/div[2]/div[1]/div[3]/div/label/div/select/option[1]"
-
         lastNgames = str(lastNgames)
         data = []
         url_errors = []
         today = self.meta_data['today']
 
-        if pd.isnull(endDate):
-            endDate_url = self.meta_data['today_dt'].strftime('%m/%d/%Y')
+        if len(dateRange) != 2:
+            print('need start and end date provided in list...')
+            return
         else:
+            startDate = pd.to_datetime(dateRange[0]).date()
+            startDate_url = startDate.strftime('%m/%d/%Y')
+            endDate = pd.to_datetime(dateRange[1]).date()
             endDate_url = endDate.strftime('%m/%d/%Y')
 
         driver = self.open_browser()
 
         # get html page source data
-        url = base_url.format(lastNgames = lastNgames, type = season_type, endDate = endDate_url)
+        #url = base_url.format(lastNgames = lastNgames, type = season_type, endDate = endDate_url)
+        url = base_url.format(type = season_type,startDate = startDate_url, endDate = endDate_url)
         driver.get(url)
         time.sleep(2)
 
-        ## need to open page then change filter from 1 to -1 so that all players load
-        ## div class="Crom_cromSettings__ak6Hd"  > 
-        #####select class="DropDown_select__4pIg9"
-        #######option value=-1
-        try:
-            WebDriverWait(driver, timeout=20).until(lambda d: d.find_element("xpath", buttonXpath))
-            pagenationFilter = driver.find_element("xpath", buttonXpath)
-            pagenationFilter.click()
-        except:
-            pagenationFilter = driver.find_element("xpath", buttonXpath)
-            driver.execute_script("arguments[0].click();", pagenationFilter)
+        self.accept_nba_cookies_browser(driver)
+
+        self.select_nba_dropdown_browser(
+            driver,
+            x_scroll_int = 0, 
+            y_scroll_int = 520
+        )
 
         time.sleep(1)
         ps = driver.page_source
@@ -750,7 +804,7 @@ class scraper():
         except:
             # add url input to error list if there are any issues collecting data
             # this will allow for calling the function again only on the errors
-            url_errors.append([lastNgames, season_type])
+            url_errors.append([startDate, endDate, season_type])
             
 
         driver.close()
@@ -763,7 +817,8 @@ class scraper():
         dfpZoneShooting.loc[:,'paintAllFga'] =  dfpZoneShooting['paintRaFga'] + dfpZoneShooting['paintNoRaFga']
         dfpZoneShooting.loc[:,'paintAllFgPct'] =  round((dfpZoneShooting['paintAllFgm'] / dfpZoneShooting['paintAllFga']) * 100,3)
 
-        dfpZoneShooting.loc[:,'date'] = endDate
+
+        dfpZoneShooting.loc[:,'date'] = endDate#strftime('%Y-%m-%d')
         
         #save data
         #dfpZoneShooting.to_csv('../data/' + today + '_playerShotZones.csv', index=False)
@@ -779,16 +834,14 @@ class scraper():
             self.scrape_error_flag = True
             self.scrape_errors[database_table]['url'] = url_errors
 
-        print('nba player shot zone scraped...')
+        print('nba player shot zone scraped',dfpZoneShooting.shape[0],'loaded...')
         return
 
     def get_nba_player_passing_data(            
         self,
         base_url = 'https://www.nba.com/stats/players/passing?DateFrom={d1}&DateTo={d2}&LastNGames=0&PerMode=Totals&SeasonType={type}', 
-        today_date = None,
-        day_adjuster = -1,
+        run_date = None,
         season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
-        #lastNgames = 10,
         database_table = 'statsplayerpassing'
     ):
         """
@@ -811,40 +864,29 @@ class scraper():
         self.gen_self_dict_entry(database_table)
 
         # this can be farther back than yesterday and will be the last date with games completed.
-        if today_date == None:
-            today_date = self.meta_data['today_dt']
+        if run_date == None:
+            print('provide run_date for run date...')
+            return
         else:
-            today_date = pd.to_datetime(today_date)
-        
-        yesterday = today_date + pd.DateOffset(days=day_adjuster)
-        dt = yesterday.strftime("%m/%d/%Y")
+            run_date = pd.to_datetime(run_date)
+            dt = run_date.strftime("%m/%d/%Y")
 
         data = []
         url_errors = []
-
-        buttonXpath = "/html/body/div[1]/div[2]/div[2]/div[3]/section[2]/div/div[2]/div[2]/div[1]/div[3]/div/label/div/select/option[1]"
-        cookieXpath = '//*[@id="onetrust-accept-btn-handler"]'
 
         # get html page source data
         driver = self.open_browser()
         url = base_url.format(d1=dt, d2=dt, type=season_type)
         driver.get(url)
-        time.sleep(3)
+        time.sleep(5)
 
-        try:
-            cookiesButton = driver.find_element("xpath", cookieXpath)
-            cookiesButton.click()
-        except:
-            pass
+        self.accept_nba_cookies_browser(driver)
 
-        try:
-            WebDriverWait(driver, timeout=20).until(lambda d: d.find_element("xpath", buttonXpath))
-            pagenationFilter = driver.find_element("xpath", buttonXpath)
-            pagenationFilter.click()
-        except:
-            #pagenationFilter = driver.find_element("xpath", buttonXpath)
-            #driver.execute_script("arguments[0].click();", pagenationFilter)
-            pass
+        self.select_nba_dropdown_browser(
+            driver,
+            x_scroll_int = 0, 
+            y_scroll_int = 520
+        )
 
         time.sleep(1)
         ps = driver.page_source
@@ -904,14 +946,14 @@ class scraper():
         except:
             # add url input to error list if there are any issues collecting data
             # this will allow for calling the function again only on the errors
-            url_errors.append([today_date, day_adjuster, season_type])
+            url_errors.append([run_date, season_type])
             
 
                     
         # combine headers with data in a dataframe        
         df = pd.DataFrame(data, columns=cols)
         #df.drop(columns=['W','L'])
-        df.loc[:,'date'] = yesterday.date()
+        df.loc[:,'date'] = run_date.date()
 
         driver.close()
 
@@ -928,16 +970,14 @@ class scraper():
             self.scrape_error_flag = True
             self.scrape_errors[database_table]['url'] = url_errors
 
-        print('nba player passing scraped...')
+        print('nba player passing scraped', df.shape[0],'loaded...')
         return
 
     def get_nba_player_rebounding_data(            
         self,
         base_url = 'https://www.nba.com/stats/players/rebounding?DateFrom={d1}&DateTo={d2}&LastNGames=0&PerMode=Totals&SeasonType={type}', 
-        today_date = None,
-        day_adjuster = -1,
+        run_date = None,
         season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
-        #lastNgames = 10,
         database_table = 'statsplayerrebounding'
     ):
         """
@@ -960,40 +1000,30 @@ class scraper():
         self.gen_self_dict_entry(database_table)
 
         # this can be farther back than yesterday and will be the last date with games completed.
-        if today_date == None:
-            today_date = self.meta_data['today_dt']
+        if run_date == None:
+            print('provide run_date for run date...')
+            return
         else:
-            today_date = pd.to_datetime(today_date)
-        
-        yesterday = today_date + pd.DateOffset(days=day_adjuster)
-        dt = yesterday.strftime("%m/%d/%Y")
+            run_date = pd.to_datetime(run_date)
+            dt = run_date.strftime("%m/%d/%Y")
 
         data = []
         url_errors = []
-        buttonXpath = "/html/body/div[1]/div[2]/div[2]/div[3]/section[2]/div/div[2]/div[2]/div[1]/div[3]/div/label/div/select/option[1]"
-        cookieXpath = '//*[@id="onetrust-accept-btn-handler"]'
 
         # get html page source data
         url = base_url.format(d1=dt, d2=dt, type=season_type)
         driver = self.open_browser()
         driver.get(url)
-        time.sleep(3)
+        time.sleep(5)
 
-        try:
-            cookiesButton = driver.find_element("xpath", cookieXpath)
-            cookiesButton.click()
-        except:
-            pass
+        self.accept_nba_cookies_browser(driver)
 
-        try:
-            WebDriverWait(driver, timeout=20).until(lambda d: d.find_element("xpath", buttonXpath))
-            pagenationFilter = driver.find_element("xpath", buttonXpath)
-            pagenationFilter.click()
-        except:
-            #pagenationFilter = driver.find_element("xpath", buttonXpath)
-            #driver.execute_script("arguments[0].click();", pagenationFilter)
-            pass
-
+        self.select_nba_dropdown_browser(
+            driver,
+            x_scroll_int = 0, 
+            y_scroll_int = 520
+        )
+       
         time.sleep(1)
         ps = driver.page_source
         soup = bs(ps)
@@ -1053,13 +1083,13 @@ class scraper():
         except:
             # add url input to error list if there are any issues collecting data
             # this will allow for calling the function again only on the errors
-            url_errors.append([today_date, day_adjuster, season_type])
+            url_errors.append([run_date, season_type])
             
                     
         # combine headers with data in a dataframe        
         df = pd.DataFrame(data, columns=cols)
         df.drop(columns=['W','L'])
-        df.loc[:,'date'] = yesterday.date()
+        df.loc[:,'date'] = run_date.date()
 
         driver.close()
 
@@ -1075,7 +1105,7 @@ class scraper():
             self.scrape_error_flag = True
             self.scrape_errors[database_table]['url'] = url_errors
 
-        print('nba player rebounding scraped...')
+        print('nba player rebounding scraped', df.shape[0],'loaded...')
         return
 
     #TODO: scrape
@@ -1089,7 +1119,8 @@ class scraper():
         base_url = 'https://www.basketball-reference.com/teams/{team}/{season}.html#pbp', 
         today_date = None,
         season = 2025,
-        database_table = 'brefmisc'
+        database_table = 'brefmisc',
+        team_overrides = None
     ):
         """
         function to scrape basketball reference player position estimates
@@ -1110,17 +1141,17 @@ class scraper():
             today_date = self.meta_data['today_dt']
         else:
             today_date = pd.to_datetime(today_date)
-        
-        all_team_data = []
-        url_errors = []
 
         # basketball ref team url abbrevs
-        bref_team_abbr = [
-            'GSW','DEN','POR','SAC','TOR','DAL','PHO','CHI',
-            'LAL','HOU','MIA','MEM','DET','MIL','NOP','MIN',
-            'CLE','OKC','LAC','BRK','SAS','NYK','WAS','CHO',
-            'UTA','IND','BOS','PHI','ATL','ORL'
-        ]
+        if team_overrides == None:
+            bref_team_abbr = [
+                'GSW','DEN','POR','SAC','TOR','DAL','PHO','CHI',
+                'LAL','HOU','MIA','MEM','DET','MIL','NOP','MIN',
+                'CLE','OKC','LAC','BRK','SAS','NYK','WAS','CHO',
+                'UTA','IND','BOS','PHI','ATL','ORL'
+            ]
+        else:
+            bref_team_abbr = team_overrides
         
         # col names in the database
         bref_cols = [
@@ -1131,61 +1162,79 @@ class scraper():
             'date', 'team'
         ]
 
+        #all_team_data = []
+        all_team_data = pd.DataFrame(columns=bref_cols)
+        url_errors = []
+
+
         driver = self.open_browser()
         # loop through each team webpage to gather data        
         for i in bref_team_abbr:
+            time.sleep(3)
             try:
                 url = base_url.format(team = i, season = str(season))
                 driver.get(url)
-                time.sleep(2)
+                time.sleep(3)
 
                 table_id = 'pbp_stats'
                 table = None  # Placeholder for the table element
                 scroll_attempts = 30  # Number of scrolling attempts
                 scroll_step = 500  # Pixels to scroll down on each attempt
 
-                # scroll through the page to make the table of interest visible so it can be pulled from the html
-                for attempt in range(scroll_attempts):
-                    try:
-                        # Try to find the table
-                        table = driver.find_element(By.ID, table_id)
-                        if table.is_displayed():  # Check if the table is now visible
-                            break
-                    except NoSuchElementException:
-                        pass  # Table not found, keep scrolling
-
-                    # Scroll down by the step size
-                    driver.execute_script(f"window.scrollBy(0, {scroll_step});")
+                ## scroll through the page to make the table of interest visible so it can be pulled from the html
+                #for attempt in range(scroll_attempts):
+                #    try:
+                #        # Try to find the table
+                #        table = driver.find_element(By.ID, table_id)
+                #        if table.is_displayed():  # Check if the table is now visible
+                #            break
+                #    except NoSuchElementException:
+                #        pass  # Table not found, keep scrolling
+                #
+                #    # Scroll down by the step size
+                #    driver.execute_script(f"window.scrollBy(0, {scroll_step});")
 
                 # go back to table to grab page source data
-                driver.execute_script("arguments[0].scrollIntoView();", table)
+                #driver.execute_script("arguments[0].scrollIntoView();", table)
 
-                ps = driver.page_source
-                soup = bs(ps)
-                tables = soup.find_all('table')
+                #ps = driver.page_source
+                #soup = bs(ps)
+                #tables = soup.find_all('table')
 
                 # select the table of interest
-                for t in tables:
-                    tbl = t.get_attribute_list('id')[0]
-                    if tbl == table_id:
-                        table = t
+                #for t in tables:
+                #    tbl = t.get_attribute_list('id')[0]
+                #    if tbl == table_id:
+                #        table = t
 
                 # extract each row
-                rows = table.find('tbody').find_all('tr')
-                for r in rows:
+                #rows = table.find('tbody').find_all('tr')
+                #for r in rows:
                     
-                    row = []    
+                #    row = []    
                     
                     # extract each piece of data from a single row (cols in the table in the html)
-                    rowData = r.find_all('td')
-                    for j in rowData:
-                        row.append(j.text)
+                #    rowData = r.find_all('td')
+                #    for j in rowData:
+                #        row.append(j.text)
 
-                    row.append(self.meta_data['today'])
-                    row.append(i) # team name
+                #    row.append(self.meta_data['today'])
+                #    row.append(i) # team name
                     
-                    all_team_data.append(row)
-                    
+                #    all_team_data.append(row)
+
+                # this was removed out of the loop below. loop stopped working and selenium is now able to find it without scrolling
+                table = driver.find_element(By.ID, table_id)
+                driver.execute_script("arguments[0].scrollIntoView();", table)
+
+                table_html = table.get_attribute('outerHTML')  # Get table HTML
+                df = pd.read_html(table_html)[0]  # Convert to DataFrame
+                df = df.iloc[:,1:].reset_index(drop=True)
+                df.loc[:,'date'] = self.meta_data['today']
+                df.loc[:,'team'] = i
+                df.columns = bref_cols
+
+                all_team_data = pd.concat([all_team_data, df])
             
             except:
                 url_errors.append([i, season])

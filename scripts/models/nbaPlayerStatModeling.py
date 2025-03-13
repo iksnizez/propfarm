@@ -7,10 +7,12 @@ from sqlalchemy import create_engine
 ### # nba_api is not friendly, changed it direct url hit ###
 #from nba_api.stats.endpoints import LeagueDashPlayerStats
 from nba_api.stats.endpoints import ScoreboardV2
-from nba_api.stats.endpoints import PlayerDashboardByGeneralSplits
 
 # models
 #from scipy.stats import poisson, binom, nbinom
+from statsmodels.tsa.stattools import adfuller
+from scipy.optimize import minimize
+from sklearn.linear_model import Ridge
 
 
 #TODO:
@@ -74,10 +76,9 @@ class playerStatModel():
     
     def __init__(self, day_offset = 0, season = '2024-25', perMode = 'PerGame', num_simulations= 10000):
         
-
         self.day_offset = day_offset
         self.season = season
-        self.perMode = perMode ##['Per100Possessions', 'Totals', 'Per36', 'PerGame']
+        self.perMode = perMode ##['Per100Possessions', 'Totals', 'Per36', 'PerGame'] # only used for nba api hits
         self.game_search_date = datetime.today().strftime('%m/%d/%Y')
         self.game_search_dt = datetime.today() + timedelta(days=day_offset)
         self.num_simulations = num_simulations
@@ -92,6 +93,17 @@ class playerStatModel():
         }
 
         self.pace_gathered = False
+
+        self.nba_team_ids = {
+            'ATL':1610612737, 'BOS':1610612738, 'BKN':1610612751, 'CHA':1610612766,
+            'CHI':1610612741, 'CLE':1610612739, 'DAL':1610612742, 'DEN':1610612743,  
+            'DET':1610612765, 'GSW':1610612744, 'HOU':1610612745, 'IND':1610612754, 
+            'LAC':1610612746, 'LAL':1610612747, 'MIA':1610612748, 'MIL':1610612749,  
+            'MIN':1610612750, 'MEM':1610612763, 'NOP':1610612740, 'NYK':1610612752, 
+            'ORL':1610612753, 'OKC':1610612760, 'PHI':1610612755, 'PHX':1610612756, 
+            'POR':1610612757, 'SAC':1610612758, 'SAS':1610612759, 'TOR':1610612761,  
+            'UTA':1610612762, 'WAS':1610612764
+        }
 
 #####################################################
 ###### GATHERING DATA
@@ -239,7 +251,8 @@ class playerStatModel():
         url_base_nba_player_stat = 'https://stats.nba.com/stats/leaguedashplayerstats?College=&Conference=&Country=&DateFrom=&DateTo=&Division=&DraftPick=&DraftYear=&GameScope=&GameSegment=&Height=&LastNGames=0&LeagueID=00&Location=&MeasureType=Base&Month=0&OpponentTeamID=0&Outcome=&PORound=0&PaceAdjust=N&PerMode={per}&Period=0&PlayerExperience=&PlayerPosition=&PlusMinus=N&Rank=N&Season={sid}&SeasonSegment=&SeasonType=Regular+Season&ShotClockRange=&StarterBench=&TeamID={tid}&TwoWay=0&VsConference=&VsDivision=&Weight=',
         minute_cutoff = 15.0,
         season = '2025',
-        pull_players_from_nbaapi = False
+        pull_players_from_nbaapi = False,
+        database_creds = '../../../../Notes-General/config.txt'
     ):
         """
         using the team ids from get_teams_playing(), aggregate player data stats of interest
@@ -314,7 +327,7 @@ class playerStatModel():
             """
             params = tuple([season] + self.list_team_ids)
 
-            engine = connect_to_database(database_creds = '../../../../Notes-General/config.txt')
+            engine = connect_to_database(database_creds = database_creds)
             with engine.connect() as conn:
                 self.df_player_boxscores = pd.read_sql_query(
                     sql = query,
@@ -594,7 +607,7 @@ class playerStatModel():
         self.df_players.loc[:,'MINadj'] = 1
         return
     
-    def calculate_model_inputs(self):
+    def calculate_expected_stats(self):
         df = self.df_players.copy()
 
         # actual stat processing
@@ -687,8 +700,11 @@ class playerStatModel():
         self.df_players = df.copy()
         return
 
+    def model_stat_mean_reversion(self):
+        pass
+
 #####################################################
-###### MODELING EXPECTED STATS
+###### MODELING STAT PROBABILITIES
 #####################################################
     def model_stats(self):
         df = self.df_players.copy()
@@ -711,6 +727,7 @@ class playerStatModel():
         #        df['shotshareFG3A'].values[:, None] / (df['shotshareFG3A'].values[:, None] + df['shotshareFTA'].values[:, None]))
         #)
         fg2a = np.random.binomial(sim_shots, df['shotshareFG2A'].values[:, None], size=sim_shots.shape)      
+        #TODO handle when a player takes no fg3a or fta and then remove filter in notebook
         fg3a = np.random.binomial(sim_shots - fg2a, 
             df['shotshareFG3A'].values[:, None] / (df['shotshareFG3A'].values[:, None] + df['shotshareFTA'].values[:, None]),
             size=sim_shots.shape

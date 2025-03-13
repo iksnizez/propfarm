@@ -6,7 +6,7 @@ library(DBI)
 library(dplyr)
 source("scripts/functions/dbConnhelpers.R")
 
-league <- 'nba'
+league <- "nba"
 
 ################
 # UPDATE PBP DATABASE TABLE - manually checks existing db for latest date and loads everything after it
