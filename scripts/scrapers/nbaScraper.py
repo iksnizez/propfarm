@@ -108,7 +108,13 @@ class scraper():
             driver.execute_script(f"window.scrollBy({x_scroll_int}, {y_scroll_int});")
             WebDriverWait(driver, timeout=20).until(lambda d: d.find_element("xpath", self.buttonXpath))
             pagenationFilter = driver.find_element("xpath", self.buttonXpath)
-            pagenationFilter.click()
+            # this worked off and on and the buttonXpath needs the selection option added to it, 
+            # otherwise it just clicks the list and selects nothing
+            #pagenationFilter.click()
+
+            # create object to hold drop down and select the item from it based on idx
+            select = Select(pagenationFilter)
+            select.select_by_index(0)
         except:
             print('drop down not found...')
             #pagenationFilter = driver.find_element("xpath", self.buttonXpath)
@@ -170,14 +176,15 @@ class scraper():
     # nba com scrapes
     def get_nba_team_playtype_data(
             self,
-            base_url = 'https://www.nba.com/stats/teams/{playtype}?TypeGrouping={sideofball}&SeasonType={type}',
+            base_url = 'https://www.nba.com/stats/teams/{playtype}?TypeGrouping={sideofball}&SeasonType={type}&Season={season}',
             play_types = [
                 'isolation', 'transition', 'ball-handler', 'roll-man', 'playtype-post-up',
                 'spot-up', 'hand-off', 'cut', 'off-screen','putbacks'
             ],
             sides = ['offensive', 'defensive'],
             season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
-            database_table = 'statsteamplaytypes'
+            database_table = 'statsteamplaytypes',
+            season = None
     ):
         """
         function to scrape nba.com team playtype stats on both sides of the ball
@@ -208,7 +215,13 @@ class scraper():
         for s in sides:
             for play in play_types:
                 # get html page source data
-                url = base_url.format(playtype=play, sideofball=s, type= season_type)
+                url = base_url.format(
+                    playtype = play, 
+                    sideofball = s, 
+                    type = season_type,
+                    season = season
+                )
+
                 driver.get(url)
                 
                 self.accept_nba_cookies_browser(driver)
@@ -270,7 +283,7 @@ class scraper():
                 ranked = pd.concat([ranked, temp])
 
         ranked.loc[:,'date'] = self.meta_data['today_dt']
-
+        ranked = ranked.replace('-',0)
 
         #saving data
         #ranked.to_csv('../data/' + today + '_teamPlayTypes.csv', index=False)
@@ -291,12 +304,13 @@ class scraper():
 
     def get_nba_team_shotzone_data(            
             self,
-            #base_url = 'https://www.nba.com/stats/teams/{sideOfBall}?DistanceRange=By+Zone&LastNGames={lastNgames}&SeasonType={type}&DateTo={endDate}', 
-            base_url = 'https://www.nba.com/stats/teams/{sideOfBall}?DistanceRange=By+Zone&SeasonType={type}&DateFrom={startDate}&DateTo={endDate}&PerMode=Totals', 
+            base_url = 'https://www.nba.com/stats/teams/{sideOfBall}?DistanceRange=By+Zone&SeasonType={type}&DateFrom={startDate}&DateTo={endDate}&PerMode={perMode}&Season={season}', 
             sides = {'offensive':'shooting', 'defensive':'opponent-shooting'},
             season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
+            perMode = 'Totals', #[Totals, PerMode]
             database_table = 'statsteamshotzones',
-            dateRange = None
+            dateRange = None,
+            season = None
     ):
         """
         function to scrape nba.com team shot zone stats on both sides of the ball
@@ -339,11 +353,15 @@ class scraper():
             endDate_url = endDate.strftime('%m/%d/%Y')
 
         for s, v in sides.items():       
-            #url = base_url.format(sideOfBall=v, lastNgames=lastNgames, type=season_type, endDate = endDate_url)
-            url = base_url.format(sideOfBall=v, type=season_type, startDate= startDate_url, endDate = endDate_url)
-            #url = "https://www.nba.com/stats/teams/shooting?DistanceRange=By+Zone&SeasonType=Playoffs&DateFrom=04%2F29%2F2024&DateTo=05%2F08%2F2024"
-            #url = "https://www.nba.com/stats/teams/opponent-shooting?DistanceRange=By+Zone&SeasonType=Playoffs&DateFrom=04%2F29%2F2024&DateTo=05%2F08%2F2024"
-            
+            url = base_url.format(
+                sideOfBall=v, 
+                type=season_type, 
+                startDate= startDate_url, 
+                endDate = endDate_url,
+                perMode = perMode,
+                season = season
+            )
+
             # get html page source data
             driver.get(url)
             
@@ -395,6 +413,7 @@ class scraper():
         dfZoneShooting.loc[:,'paintAllFgPct'] =  round((dfZoneShooting['paintAllFgm'] / dfZoneShooting['paintAllFga']) * 100,3)
 
         dfZoneShooting.loc[:,'date'] = endDate
+        randfZoneShootingked = dfZoneShooting.replace('-',0)
 
         #save data
         #dfZoneShooting.to_csv('../data/' + today + '_teamShotZones.csv', index=False)
@@ -416,18 +435,17 @@ class scraper():
         return
 
     def get_nba_team_stats(
-            self,
-            base_url = 'https://www.nba.com/stats/teams/{stats}?SeasonType={seasonType}',
+            self,                                               
+            base_url = 'https://www.nba.com/stats/teams/{stats}?SeasonType={seasonType}&DateFrom={startDate}&DateTo={endDate}&PerMode={perMode}&Season={season}',
             stats = ['traditional', 'advanced', 'opponent'],
             season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
-            lastNgames = 0,
+            perMode = 'Totals',  # [Totals, PerGame]
             database_table = 'statsteam',
-            endDate = None
+            dateRange = None,
+            season = None # '2024-25'
     ):
          # add table to class storage dictionaries
         self.gen_self_dict_entry(database_table)
-
-        lastNgames = str(lastNgames)
 
         driver = self.open_browser()
         # scrapes from 3 urls with 3 different tables, this will store them until joined into one
@@ -451,13 +469,25 @@ class scraper():
         ]
         }
 
-        if pd.isnull(endDate):
-            endDate_url = self.meta_data['today_dt'].strftime('%m/%d/%Y')
+        if len(dateRange) != 2:
+            print('need start and end date provided in list...')
+            return
         else:
+            startDate = pd.to_datetime(dateRange[0]).date()
+            startDate_url = startDate.strftime('%m/%d/%Y')
+            endDate = pd.to_datetime(dateRange[1]).date()
             endDate_url = endDate.strftime('%m/%d/%Y')
 
-        for s in stats:       
-            url = base_url.format(stats=s, seasonType=season_type)
+        for s in stats:    
+               
+            url = base_url.format(
+                stats = s, 
+                seasonType = season_type,
+                startDate = startDate_url,
+                endDate = endDate_url,
+                perMode = perMode,
+                season = season
+            )
 
             # get html page source data
             driver.get(url)
@@ -517,7 +547,8 @@ class scraper():
                 temp = temp.drop(['idx', 'team', 'gp', 'w', 'l', 'min'], axis = 1)
                 df = df.merge(temp, on='tid', how='left')
         
-        df['date'] = endDate_url
+        df['date'] = endDate
+        df = df.replace('-', 0)
 
                 #save data
         #dfZoneShooting.to_csv('../data/' + today + '_teamShotZones.csv', index=False)
@@ -538,14 +569,15 @@ class scraper():
 
     def get_nba_player_playtype_data(            
             self,
-            base_url = 'https://www.nba.com/stats/players/{playtype}?TypeGrouping={sideofball}&SeasonType={type}', 
+            base_url = 'https://www.nba.com/stats/players/{playtype}?TypeGrouping={sideofball}&SeasonType={type}&Season={season}', 
             play_types = [
                 'isolation', 'transition', 'ball-handler', 'roll-man', 'playtype-post-up',
                 'spot-up', 'hand-off', 'cut', 'off-screen','putbacks'
             ],
             sides = ['offensive'],
             season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
-            database_table = 'statsplayerplaytypes'
+            database_table = 'statsplayerplaytypes',
+            season = None
     ):
         """
         function to scrape nba.com player play type stats on offense
@@ -577,7 +609,12 @@ class scraper():
         for s in sides:
             for play in play_types:
                 # get html page source data
-                url = base_url.format(playtype=play, sideofball=s, type=season_type)
+                url = base_url.format(
+                    playtype=play, 
+                    sideofball=s, 
+                    type=season_type,
+                    season=season
+                )
                 
                 # get html page source data
                 driver.get(url)
@@ -588,7 +625,7 @@ class scraper():
                 self.select_nba_dropdown_browser(
                     driver,
                     x_scroll_int = 0, 
-                    y_scroll_int = 520
+                    y_scroll_int = 375
                 )
                 
                 time.sleep(1)
@@ -697,12 +734,12 @@ class scraper():
 
     def get_nba_player_shotzone_data(            
             self,
-            #base_url = 'https://www.nba.com/stats/players/shooting?DistanceRange=By+Zone&LastNGames={lastNgames}&SeasonType={type}&DateTo={endDate}', 
-            base_url = 'https://www.nba.com/stats/players/shooting?DistanceRange=By+Zone&SeasonType={type}&DateFrom={startDate}&DateTo={endDate}&PerMode=Totals', 
+            base_url = 'https://www.nba.com/stats/players/shooting?DistanceRange=By+Zone&SeasonType={type}&DateFrom={startDate}&DateTo={endDate}&PerMode={perMode}&Season={season}', 
             season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
-            lastNgames = 0,
+            perMode = 'Totals',
             database_table = 'statsplayershotzones',
-            dateRange = None
+            dateRange = None,
+            season = None
     ):
         """
         function to scrape nba.com player shot zone stats on offense
@@ -731,7 +768,6 @@ class scraper():
             'aboveBreak3FgPct','pid','tid'
         ]
 
-        lastNgames = str(lastNgames)
         data = []
         url_errors = []
         today = self.meta_data['today']
@@ -748,8 +784,14 @@ class scraper():
         driver = self.open_browser()
 
         # get html page source data
-        #url = base_url.format(lastNgames = lastNgames, type = season_type, endDate = endDate_url)
-        url = base_url.format(type = season_type,startDate = startDate_url, endDate = endDate_url)
+        url = base_url.format(
+            type = season_type,
+            startDate = startDate_url, 
+            endDate = endDate_url,
+            perMode = perMode,
+            season = season
+        )
+        
         driver.get(url)
         time.sleep(2)
 
@@ -758,7 +800,7 @@ class scraper():
         self.select_nba_dropdown_browser(
             driver,
             x_scroll_int = 0, 
-            y_scroll_int = 520
+            y_scroll_int = 375
         )
 
         time.sleep(1)
@@ -818,7 +860,7 @@ class scraper():
         dfpZoneShooting.loc[:,'paintAllFgPct'] =  round((dfpZoneShooting['paintAllFgm'] / dfpZoneShooting['paintAllFga']) * 100,3)
 
 
-        dfpZoneShooting.loc[:,'date'] = endDate#strftime('%Y-%m-%d')
+        dfpZoneShooting.loc[:,'date'] = endDate #strftime('%Y-%m-%d')
         
         #save data
         #dfpZoneShooting.to_csv('../data/' + today + '_playerShotZones.csv', index=False)
@@ -839,10 +881,12 @@ class scraper():
 
     def get_nba_player_passing_data(            
         self,
-        base_url = 'https://www.nba.com/stats/players/passing?DateFrom={d1}&DateTo={d2}&LastNGames=0&PerMode=Totals&SeasonType={type}', 
+        base_url = 'https://www.nba.com/stats/players/passing?DateFrom={d1}&DateTo={d2}&PerMode={perMode}&SeasonType={type}&Season={season}', 
         run_date = None,
         season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
-        database_table = 'statsplayerpassing'
+        perMode = 'Totals',
+        database_table = 'statsplayerpassing',
+        season = None
     ):
         """
         function to scrape nba.com player passing stats on offense
@@ -876,7 +920,14 @@ class scraper():
 
         # get html page source data
         driver = self.open_browser()
-        url = base_url.format(d1=dt, d2=dt, type=season_type)
+        url = base_url.format(
+            d1=dt, 
+            d2=dt,
+            perMode = perMode,
+            type=season_type,
+            season = season
+        )
+
         driver.get(url)
         time.sleep(5)
 
@@ -975,10 +1026,12 @@ class scraper():
 
     def get_nba_player_rebounding_data(            
         self,
-        base_url = 'https://www.nba.com/stats/players/rebounding?DateFrom={d1}&DateTo={d2}&LastNGames=0&PerMode=Totals&SeasonType={type}', 
+        base_url = 'https://www.nba.com/stats/players/rebounding?DateFrom={d1}&DateTo={d2}&PerMode={perMode}&SeasonType={type}&Season={season}', 
         run_date = None,
         season_type = 'Regular+Season',  # ['Regular+Season', 'PlayIn', 'Playoffs']
-        database_table = 'statsplayerrebounding'
+        perMode = 'Totals', # [Totals, PerGame]
+        database_table = 'statsplayerrebounding',
+        season = None
     ):
         """
         function to scrape nba.com player passing stats on offense
@@ -1011,7 +1064,13 @@ class scraper():
         url_errors = []
 
         # get html page source data
-        url = base_url.format(d1=dt, d2=dt, type=season_type)
+        url = base_url.format(
+            d1=dt, 
+            d2=dt,
+            perMode = perMode,
+            type=season_type,
+            season = season
+        )
         driver = self.open_browser()
         driver.get(url)
         time.sleep(5)
