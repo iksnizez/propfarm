@@ -277,7 +277,7 @@ class scraper():
 
         # TODO MAKE THIS RECURSIVE TO CLEAR ALL ERRORS INSTEAD OF SINGLE RETRY
         # rescrape errors
-        if (url_errors) > 0:
+        if len(url_errors) > 0:
             temp_errors = []
             print('missing scrapes:', url_errors)
             for i in url_errors:

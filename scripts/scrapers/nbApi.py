@@ -224,18 +224,18 @@ class nbaApi():
         if self.database_export:
             self.export_database(df_all, database_table, self.pymysql_conn_str)
 
-        print('retrieved play types:', df_all['play'].nunique(), ', sob:', df_all['sob'].nunique(), ', teams:', df_all['tid'].nunique())
+        print('retrieved nba team play types:', df_all['play'].nunique(), ', sob:', df_all['sob'].nunique(), ', teams:', df_all['tid'].nunique())
         return
     #player
     def request_nba_player_playtype_data(self,
             season, #'YYYY-YY' 
-            playType = [
+            play_type = [
                 'Isolation', 'Transition','PRBallHandler','PRRollman', 'Postup', 'Spotup', 
                 'Handoff', 'Cut', 'OffScreen', 'OffRebound', 'Misc'
             ], 
             lid='00',
-            perMode = 'PerGame', #['Totals', 'PerGame']
-            seasonType = 'Regular+Season', #['Regular+Season', 'PlayIn', 'Playoffs']
+            per_mode = 'PerGame', #['Totals', 'PerGame']
+            season_type = 'Regular+Season', #['Regular+Season', 'PlayIn', 'Playoffs']
             sob = ['offensive'], #['offensive','defensive'],
             sleep_time = 2,
             database_table = None
@@ -271,12 +271,12 @@ class nbaApi():
         self.gen_self_dict_entry(database_table)
          
         for side_of_ball in sob:
-            for play in playType:
+            for play in play_type:
                 url_temp = url_nba_playtype.strip().replace('\n','').replace(' ','').format(
                     lid = lid,
-                    perMode = perMode,
+                    perMode = per_mode,
                     playType = play,
-                    seasonType = seasonType,
+                    seasonType = season_type,
                     season = season,
                     sob = side_of_ball
                 )
@@ -310,7 +310,7 @@ class nbaApi():
         if self.database_export:
             self.export_database(df_all, database_table, self.pymysql_conn_str)
 
-        print('retrieved play types:', df_all['play'].nunique(), ', sob:', df_all['sob'].nunique(), ', players:', df_all['pid'].nunique())
+        print('retrieved nba player play types:', df_all['play'].nunique(), ', sob:', df_all['sob'].nunique(), ', players:', df_all['pid'].nunique())
         return
 
     ### --- API Endpoint leaguedashteamshotlocations --- ###
@@ -327,6 +327,10 @@ class nbaApi():
     ):
         map_sob = {'Base':'offensive', 'Opponent':'defensive'}
         all_data_team = []
+
+        # force dates to date object
+        start_date = pd.to_datetime(start_date).date()
+        end_date = pd.to_datetime(end_date).date()
 
         url_nba_team_shotzone = """https://stats.nba.com/stats/leaguedashteamshotlocations?
             Conference=&DateFrom={startDate}&DateTo={endDate}&DistanceRange={distance}&
@@ -423,6 +427,10 @@ class nbaApi():
         map_sob = {'Base':'offensive', 'Opponent':'defensive'}
         all_data = []
 
+        # force dates to date object
+        start_date = pd.to_datetime(start_date).date()
+        end_date = pd.to_datetime(end_date).date()
+
         url_nba = """https://stats.nba.com/stats/leaguedashplayershotlocations?
             College=&Conference=&Country=&DateFrom={startDate}&DateTo={endDate}&DistanceRange={distance}&
             Division=&DraftPick=&DraftYear=&GameScope=&GameSegment=&Height=&ISTRound=&LastNGames=0&Location=&
@@ -502,8 +510,8 @@ class nbaApi():
             self.export_database(df, database_table, self.pymysql_conn_str)
         
         #defCount = df[df['sob']=='defensive'].shape[0]
-        offCount = df[df['sob']=='offensive'].shape[0]
-        print('nba player shot zone retrieved', offCount, 'offensive loaded...')
+        #offCount = df[df['sob']=='offensive'].shape[0]
+        print('nba player shot zone retrieved', df.shape[0], 'offensive loaded...')
         return
     
     ### --- API Endpoint leaguedashteamstats --- ###
@@ -519,6 +527,10 @@ class nbaApi():
     ):
         map_measure = {'Base':'traditional', 'Advanced':'advanced', 'Opponent':'opponent'}
         team_data = {}
+
+        # force dates to date object
+        start_date = pd.to_datetime(start_date).date()
+        end_date = pd.to_datetime(end_date).date()
 
         url_nba = """https://stats.nba.com/stats/leaguedashteamstats?
             Conference=&DateFrom={startDate}&DateTo={endDate}&Division=&GameScope=&GameSegment=&Height=&
@@ -619,7 +631,7 @@ class nbaApi():
         if self.database_export:
             self.export_database(df_combined, database_table, self.pymysql_conn_str)
         
-        print('nba team stats retrieved', df_combined.shape, 'loaded...')
+        print('nba team stats', per_mode,'retrieved', df_combined.shape, 'loaded...')
         return
 
     ### --- API Endpoint leaguedashptstats --- ###
@@ -633,6 +645,10 @@ class nbaApi():
         measure_type = None, #['Passing','Rebounding','Drives','Possessions','Efficiency']  
         database_table = None                                
     ):
+        # force dates to date object
+        start_date = pd.to_datetime(start_date).date()
+        end_date = pd.to_datetime(end_date).date()
+
         url_nba = """https://stats.nba.com/stats/leaguedashptstats?
             College=&Conference=&Country=&DateFrom={startDate}&DateTo={endDate}&Division=&DraftPick=&
             DraftYear=&GameScope=&Height=&ISTRound=&LastNGames=0&LeagueID=00&Location=&Month=0&
