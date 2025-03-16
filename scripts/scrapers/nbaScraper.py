@@ -1,9 +1,6 @@
 import pandas as pd
-import json, time, re
-from datetime import datetime, timedelta
-
-from nba_api.stats.endpoints import leaguegamefinder
-from sqlalchemy import create_engine
+import json, time, re, requests
+from datetime import datetime
 
 from bs4 import BeautifulSoup as bs
 from selenium import webdriver
@@ -12,7 +9,6 @@ from selenium.webdriver.support.wait import WebDriverWait # used to wait for ele
 from selenium.webdriver.support import expected_conditions as EC  # used to wait for elements - popups
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select # used for drop down
-#from selenium.common.exceptions import NoSuchElementException
 
 import warnings 
 warnings.filterwarnings('ignore')
@@ -151,12 +147,37 @@ class scraper():
             value = re.sub(pattern, replacement, value, flags=re.IGNORECASE)
         return value
 
-    def get_last_game_date(self, season = '2024-25'):
-    
-        # Fetch all games for the current season
-        gamefinder = leaguegamefinder.LeagueGameFinder(season_nullable=season, league_id_nullable='00')
-        games = gamefinder.get_data_frames()[0]
+    def nba_api_get_to_dataframe(self, url):
+        nba_headers = {
+                'Host': 'stats.nba.com',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0',
+                'Accept': '*/*',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br, zstd',
+                'Referer': 'https://www.nba.com/',
+                'Origin': 'https://www.nba.com',
+                'DNT': '1',
+                'Sec-GPC': '1',
+                'Connection': 'keep-alive',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-site',
+                'Priority': 'u=4'
+            }
 
+        response = requests.get(url = url, headers = nba_headers)
+        columns = response.json()['resultSets'][0]['headers']
+        data = response.json()['resultSets'][0]['rowSet']
+        df = pd.DataFrame(data = data, columns= columns)
+        return df
+    
+    def get_last_game_date(self, season = '2024-25'):
+        '''
+        searches the season provided for all completed games and returns the dat of the last played
+        '''
+        url = 'https://stats.nba.com/stats/leaguegamefinder?Season={season}&PlayerOrTeam=T&LeagueId=00'.format(season=season)
+        games = self.nba_api_get_to_dataframe(url = url)
+    
         # Convert GAME_DATE to datetime and find the most recent date
         ##### this data returns all games for the season
         ##### SEASON_ID: is an identifier followed by starting year of season so xYYYY 
@@ -171,6 +192,151 @@ class scraper():
         print("Last day with games played:", last_game_date.date())
         return 
 
+    ################
+    # basketball reference scrapes
+    def get_bref_pos_estimates(
+        self,
+        base_url = 'https://www.basketball-reference.com/teams/{team}/{season}.html#pbp', 
+        today_date = None,
+        season = 2025,
+        database_table = 'brefmisc',
+        team_overrides = None
+    ):
+        """
+        function to scrape basketball reference player position estimates
+        they up date the estimates every day
+
+        * base_url = desired scraping url -ex: https://www.basketball-reference.com/teams/PHI/2024.html#pbp
+        * database_table = name that will be used if exporting to database and also as the key in dictionary holding all df's
+        
+        Data will be scraped and added to the class objects appropiate data frame
+
+        returns nothing since data is stored in class
+        """
+        # add table to class storage dictionaries
+        self.gen_self_dict_entry(database_table)
+
+        # this can be farther back than yesterday and will be the last date with games completed.
+        if today_date == None:
+            today_date = self.meta_data['today_dt']
+        else:
+            today_date = pd.to_datetime(today_date)
+
+        # basketball ref team url abbrevs
+        if team_overrides == None:
+            bref_team_abbr = [
+                'GSW','DEN','POR','SAC','TOR','DAL','PHO','CHI',
+                'LAL','HOU','MIA','MEM','DET','MIL','NOP','MIN',
+                'CLE','OKC','LAC','BRK','SAS','NYK','WAS','CHO',
+                'UTA','IND','BOS','PHI','ATL','ORL'
+            ]
+        else:
+            bref_team_abbr = team_overrides
+        
+        # col names in the database
+        bref_cols = [
+            'player', 'age', 'pos', 'gp', 'gs', 'mp', 'PG', 'SG', 'SF',
+            'PF', 'C', 'onCourtPlusMinusPer100', 'onOffPlusMinusPer100',
+            'badPass', 'lostBall', 'shootFoulCommitted', 'offFoulCommitted',
+            'shootFoulDrawn', 'offFoulDrawn', 'ptsGenFromAst', 'andOnes', 'shotsBlk', 'awards',
+            'date', 'team'
+        ]
+
+        #all_team_data = []
+        all_team_data = pd.DataFrame(columns=bref_cols)
+        url_errors = []
+
+        driver = self.open_browser()
+        # loop through each team webpage to gather data        
+        for i in bref_team_abbr:
+            time.sleep(3)
+            try:
+                url = base_url.format(team = i, season = str(season))
+                driver.get(url)
+                time.sleep(3)
+
+                table_id = 'pbp_stats'
+                table = None  # Placeholder for the table element
+
+                # this was removed out of the loop below. loop stopped working and selenium is now able to find it without scrolling
+                table = driver.find_element(By.ID, table_id)
+                driver.execute_script("arguments[0].scrollIntoView();", table)
+
+                table_html = table.get_attribute('outerHTML')  # Get table HTML
+                df = pd.read_html(table_html)[0]  # Convert to DataFrame
+                df = df.iloc[:,1:].reset_index(drop=True)
+                df.loc[:,'date'] = self.meta_data['today']
+                df.loc[:,'team'] = i
+                df.columns = bref_cols
+
+                all_team_data = pd.concat([all_team_data, df])
+            
+            except:
+                url_errors.append([i, season])
+                continue
+
+        # TODO MAKE THIS RECURSIVE TO CLEAR ALL ERRORS INSTEAD OF SINGLE RETRY
+        # rescrape errors
+        if (url_errors) > 0:
+            temp_errors = []
+            print('missing scrapes:', url_errors)
+            for i in url_errors:
+                try:
+                    url = base_url.format(team = i[0], season = str(season))
+                    driver.get(url)
+                    time.sleep(3)
+
+                    table_id = 'pbp_stats'
+                    table = None  # Placeholder for the table element
+
+                    # this was removed out of the loop below. loop stopped working and selenium is now able to find it without scrolling
+                    table = driver.find_element(By.ID, table_id)
+                    driver.execute_script("arguments[0].scrollIntoView();", table)
+
+                    table_html = table.get_attribute('outerHTML')  # Get table HTML
+                    df = pd.read_html(table_html)[0]  # Convert to DataFrame
+                    df = df.iloc[:,1:].reset_index(drop=True)
+                    df.loc[:,'date'] = self.meta_data['today']
+                    df.loc[:,'team'] = i
+                    df.columns = bref_cols
+
+                    all_team_data = pd.concat([all_team_data, df])
+                    
+                except:
+                    temp_errors.append([i, season])
+                    self.scrape_error_flag = True
+                    self.scrape_errors[database_table]['url'] = temp_errors
+                    continue
+
+
+        
+        driver.close()
+        bref_pos_estimates = pd.DataFrame(all_team_data, columns = bref_cols)
+
+        # drop columns that of no interest and process some of the data
+        cols_drop = ['pos', 'awards']
+        columns_to_convert = ['PG', 'SG', 'SF', 'PF', 'C']
+
+        bref_pos_estimates = bref_pos_estimates.drop(cols_drop, axis = 1)
+        # convert pct to decimals
+        bref_pos_estimates = bref_pos_estimates.replace('', 0)
+        bref_pos_estimates[columns_to_convert] = bref_pos_estimates[columns_to_convert].fillna(0).astype(float).div(100)
+        # assign pos based on max estimate from bref
+        bref_pos_estimates['pos'] = bref_pos_estimates[columns_to_convert].idxmax(axis=1)
+
+        # use regex replacement mapping to create joinable names.
+        bref_pos_estimates['joinName'] = bref_pos_estimates['player'].apply(self.apply_regex_replacements).str.lower()
+
+        
+        if self.database_export:
+            self.export_database(bref_pos_estimates, database_table, self.pymysql_conn_str)
+
+        # add to main class object holding all data
+        if self.store_locally:
+            self.data_all[database_table] = bref_pos_estimates
+
+        print('bref player pos estimates scraped...')
+        return
 
     ################
     # nba com scrapes
@@ -413,7 +579,7 @@ class scraper():
         dfZoneShooting.loc[:,'paintAllFgPct'] =  round((dfZoneShooting['paintAllFgm'] / dfZoneShooting['paintAllFga']) * 100,3)
 
         dfZoneShooting.loc[:,'date'] = endDate
-        randfZoneShootingked = dfZoneShooting.replace('-',0)
+        dfZoneShooting = dfZoneShooting.replace('-',0)
 
         #save data
         #dfZoneShooting.to_csv('../data/' + today + '_teamShotZones.csv', index=False)
@@ -703,8 +869,8 @@ class scraper():
         cols.append('play')
 
         # add ordinal ranks
-        cols.append('freqRank')
         cols.append('scoreFreqRank')
+        cols.append('freqRank')
         ranked = pd.DataFrame(columns = cols)
 
         for pt in play_types:
@@ -1170,169 +1336,7 @@ class scraper():
     #TODO: scrape
     #playerDefRatingUrl = 'https://www.nba.com/stats/players/advanced?CF=MIN*GE*15&SeasonType=Regular%20Season&dir=-1&sort=DEF_RATING'
 
-
-    ################
-    # basketball reference scrapes
-    def get_bref_pos_estimates(
-        self,
-        base_url = 'https://www.basketball-reference.com/teams/{team}/{season}.html#pbp', 
-        today_date = None,
-        season = 2025,
-        database_table = 'brefmisc',
-        team_overrides = None
-    ):
-        """
-        function to scrape basketball reference player position estimates
-        they up date the estimates every day
-
-        * base_url = desired scraping url -ex: https://www.basketball-reference.com/teams/PHI/2024.html#pbp
-        * database_table = name that will be used if exporting to database and also as the key in dictionary holding all df's
-        
-        Data will be scraped and added to the class objects appropiate data frame
-
-        returns nothing since data is stored in class
-        """
-        # add table to class storage dictionaries
-        self.gen_self_dict_entry(database_table)
-
-        # this can be farther back than yesterday and will be the last date with games completed.
-        if today_date == None:
-            today_date = self.meta_data['today_dt']
-        else:
-            today_date = pd.to_datetime(today_date)
-
-        # basketball ref team url abbrevs
-        if team_overrides == None:
-            bref_team_abbr = [
-                'GSW','DEN','POR','SAC','TOR','DAL','PHO','CHI',
-                'LAL','HOU','MIA','MEM','DET','MIL','NOP','MIN',
-                'CLE','OKC','LAC','BRK','SAS','NYK','WAS','CHO',
-                'UTA','IND','BOS','PHI','ATL','ORL'
-            ]
-        else:
-            bref_team_abbr = team_overrides
-        
-        # col names in the database
-        bref_cols = [
-            'player', 'age', 'pos', 'gp', 'gs', 'mp', 'PG', 'SG', 'SF',
-            'PF', 'C', 'onCourtPlusMinusPer100', 'onOffPlusMinusPer100',
-            'badPass', 'lostBall', 'shootFoulCommitted', 'offFoulCommitted',
-            'shootFoulDrawn', 'offFoulDrawn', 'ptsGenFromAst', 'andOnes', 'shotsBlk', 'awards',
-            'date', 'team'
-        ]
-
-        #all_team_data = []
-        all_team_data = pd.DataFrame(columns=bref_cols)
-        url_errors = []
-
-
-        driver = self.open_browser()
-        # loop through each team webpage to gather data        
-        for i in bref_team_abbr:
-            time.sleep(3)
-            try:
-                url = base_url.format(team = i, season = str(season))
-                driver.get(url)
-                time.sleep(3)
-
-                table_id = 'pbp_stats'
-                table = None  # Placeholder for the table element
-                scroll_attempts = 30  # Number of scrolling attempts
-                scroll_step = 500  # Pixels to scroll down on each attempt
-
-                ## scroll through the page to make the table of interest visible so it can be pulled from the html
-                #for attempt in range(scroll_attempts):
-                #    try:
-                #        # Try to find the table
-                #        table = driver.find_element(By.ID, table_id)
-                #        if table.is_displayed():  # Check if the table is now visible
-                #            break
-                #    except NoSuchElementException:
-                #        pass  # Table not found, keep scrolling
-                #
-                #    # Scroll down by the step size
-                #    driver.execute_script(f"window.scrollBy(0, {scroll_step});")
-
-                # go back to table to grab page source data
-                #driver.execute_script("arguments[0].scrollIntoView();", table)
-
-                #ps = driver.page_source
-                #soup = bs(ps)
-                #tables = soup.find_all('table')
-
-                # select the table of interest
-                #for t in tables:
-                #    tbl = t.get_attribute_list('id')[0]
-                #    if tbl == table_id:
-                #        table = t
-
-                # extract each row
-                #rows = table.find('tbody').find_all('tr')
-                #for r in rows:
-                    
-                #    row = []    
-                    
-                    # extract each piece of data from a single row (cols in the table in the html)
-                #    rowData = r.find_all('td')
-                #    for j in rowData:
-                #        row.append(j.text)
-
-                #    row.append(self.meta_data['today'])
-                #    row.append(i) # team name
-                    
-                #    all_team_data.append(row)
-
-                # this was removed out of the loop below. loop stopped working and selenium is now able to find it without scrolling
-                table = driver.find_element(By.ID, table_id)
-                driver.execute_script("arguments[0].scrollIntoView();", table)
-
-                table_html = table.get_attribute('outerHTML')  # Get table HTML
-                df = pd.read_html(table_html)[0]  # Convert to DataFrame
-                df = df.iloc[:,1:].reset_index(drop=True)
-                df.loc[:,'date'] = self.meta_data['today']
-                df.loc[:,'team'] = i
-                df.columns = bref_cols
-
-                all_team_data = pd.concat([all_team_data, df])
-            
-            except:
-                url_errors.append([i, season])
-                continue
-        
-        driver.close()
-        bref_pos_estimates = pd.DataFrame(all_team_data, columns = bref_cols)
-
-        # drop columns that of no interest and process some of the data
-        cols_drop = ['pos', 'awards']
-        columns_to_convert = ['PG', 'SG', 'SF', 'PF', 'C']
-
-        bref_pos_estimates = bref_pos_estimates.drop(cols_drop, axis = 1)
-        # convert pct to decimals
-        bref_pos_estimates = bref_pos_estimates.replace('', 0)
-        bref_pos_estimates[columns_to_convert] = bref_pos_estimates[columns_to_convert].fillna(0).astype(float).div(100)
-        # assign pos based on max estimate from bref
-        bref_pos_estimates['pos'] = bref_pos_estimates[columns_to_convert].idxmax(axis=1)
-
-        # use regex replacement mapping to create joinable names.
-        bref_pos_estimates['joinName'] = bref_pos_estimates['player'].apply(self.apply_regex_replacements).str.lower()
-
-        
-        if self.database_export:
-            self.export_database(bref_pos_estimates, database_table, self.pymysql_conn_str)
-
-        # add to main class object holding all data
-        if self.store_locally:
-            self.data_all[database_table] = bref_pos_estimates
-
-        # save all urls inputs that failed
-        if len(url_errors) > 0:
-            self.scrape_error_flag = True
-            self.scrape_errors[database_table]['url'] = url_errors
-
-        print('bref player pos estimates scraped...')
-        return
-
-
+    
     # TODO: add functionality to check if there were any scraping errors and re run the necessary functions
     # loop over scrape_errors
     ##    {'statsteamplaytypes': {'url': [], 'db': []},
