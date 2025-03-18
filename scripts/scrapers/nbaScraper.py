@@ -76,6 +76,7 @@ class scraper():
         # nba site xpaths
         self.buttonXpath = "/html/body/div[1]/div[2]/div[2]/div[3]/section[2]/div/div[2]/div[2]/div[1]/div[3]/div/label/div/select"#/option[1]"
         self.cookieXpath = '//*[@id="onetrust-accept-btn-handler"]'
+        self.cookieXpath_bref = '//*[@id="modal-close"]'
 
     ##################
     # general functions
@@ -90,10 +91,10 @@ class scraper():
 
         return driver
     
-    def accept_nba_cookies_browser(self, driver):
+    def accept_nba_cookies_browser(self, driver, xPath):
         try:
-            WebDriverWait(driver, timeout=5).until(lambda d: d.find_element("xpath", self.cookieXpath))
-            cookiesButton = driver.find_element("xpath", self.cookieXpath)
+            WebDriverWait(driver, timeout=5).until(lambda d: d.find_element("xpath", xPath))
+            cookiesButton = driver.find_element("xpath", xPath)
             cookiesButton.click()
         except:
             pass
@@ -249,10 +250,11 @@ class scraper():
         driver = self.open_browser()
         # loop through each team webpage to gather data        
         for i in bref_team_abbr:
-            time.sleep(3)
             try:
                 url = base_url.format(team = i, season = str(season))
                 driver.get(url)
+                                
+                self.accept_nba_cookies_browser(driver, self.cookieXpath_bref)
                 time.sleep(3)
 
                 table_id = 'pbp_stats'
@@ -277,36 +279,36 @@ class scraper():
 
         # TODO MAKE THIS RECURSIVE TO CLEAR ALL ERRORS INSTEAD OF SINGLE RETRY
         # rescrape errors
-        if len(url_errors) > 0:
-            temp_errors = []
-            print('missing scrapes:', url_errors)
-            for i in url_errors:
-                try:
-                    url = base_url.format(team = i[0], season = str(season))
-                    driver.get(url)
-                    time.sleep(3)
+        #if len(url_errors) > 0:
+        #    temp_errors = []
+        #    print('missing scrapes:', url_errors)
+        #    for i in url_errors:
+        #        try:
+        #            url = base_url.format(team = i[0], season = str(season))
+        #            driver.get(url)
+        #            time.sleep(3)
 
-                    table_id = 'pbp_stats'
-                    table = None  # Placeholder for the table element
+        #            table_id = 'pbp_stats'
+        #            table = None  # Placeholder for the table element
 
                     # this was removed out of the loop below. loop stopped working and selenium is now able to find it without scrolling
-                    table = driver.find_element(By.ID, table_id)
-                    driver.execute_script("arguments[0].scrollIntoView();", table)
+        #            table = driver.find_element(By.ID, table_id)
+        #            driver.execute_script("arguments[0].scrollIntoView();", table)
 
-                    table_html = table.get_attribute('outerHTML')  # Get table HTML
-                    df = pd.read_html(table_html)[0]  # Convert to DataFrame
-                    df = df.iloc[:,1:].reset_index(drop=True)
-                    df.loc[:,'date'] = self.meta_data['today']
-                    df.loc[:,'team'] = i
-                    df.columns = bref_cols
+        #            table_html = table.get_attribute('outerHTML')  # Get table HTML
+        #            df = pd.read_html(table_html)[0]  # Convert to DataFrame
+        #            df = df.iloc[:,1:].reset_index(drop=True)
+        #            df.loc[:,'date'] = self.meta_data['today']
+        #            df.loc[:,'team'] = i
+        #            df.columns = bref_cols
 
-                    all_team_data = pd.concat([all_team_data, df])
+        #            all_team_data = pd.concat([all_team_data, df])
                     
-                except:
-                    temp_errors.append([i, season])
-                    self.scrape_error_flag = True
-                    self.scrape_errors[database_table]['url'] = temp_errors
-                    continue
+        #        except:
+        #            temp_errors.append([i, season])
+        #            self.scrape_error_flag = True
+        #            self.scrape_errors[database_table]['url'] = temp_errors
+        #            continue
 
 
         
@@ -390,7 +392,7 @@ class scraper():
 
                 driver.get(url)
                 
-                self.accept_nba_cookies_browser(driver)
+                self.accept_nba_cookies_browser(driver, self.cookieXpath)
                 
                 time.sleep(3)
                 ps = driver.page_source
@@ -531,7 +533,7 @@ class scraper():
             # get html page source data
             driver.get(url)
             
-            self.accept_nba_cookies_browser(driver)
+            self.accept_nba_cookies_browser(driver, self.cookieXpath)
 
             time.sleep(4)
             ps = driver.page_source
@@ -658,7 +660,7 @@ class scraper():
             # get html page source data
             driver.get(url)
 
-            self.accept_nba_cookies_browser(driver)
+            self.accept_nba_cookies_browser(driver, self.cookieXpath)
 
             time.sleep(3)
             ps = driver.page_source
@@ -786,7 +788,7 @@ class scraper():
                 driver.get(url)
                 time.sleep(2)
 
-                self.accept_nba_cookies_browser(driver)
+                self.accept_nba_cookies_browser(driver, self.cookieXpath)
 
                 self.select_nba_dropdown_browser(
                     driver,
@@ -961,7 +963,7 @@ class scraper():
         driver.get(url)
         time.sleep(2)
 
-        self.accept_nba_cookies_browser(driver)
+        self.accept_nba_cookies_browser(driver, self.cookieXpath)
 
         self.select_nba_dropdown_browser(
             driver,
@@ -1097,7 +1099,7 @@ class scraper():
         driver.get(url)
         time.sleep(5)
 
-        self.accept_nba_cookies_browser(driver)
+        self.accept_nba_cookies_browser(driver, self.cookieXpath)
 
         self.select_nba_dropdown_browser(
             driver,
@@ -1241,7 +1243,7 @@ class scraper():
         driver.get(url)
         time.sleep(5)
 
-        self.accept_nba_cookies_browser(driver)
+        self.accept_nba_cookies_browser(driver, self.cookieXpath)
 
         self.select_nba_dropdown_browser(
             driver,
