@@ -187,6 +187,22 @@ class scraper():
         games.loc[:,'GAME_DATE'] = pd.to_datetime(games['GAME_DATE'])
         games = games[games['SEASON_ID'].astype(str).str.startswith(('2', '4', '5'))] # filter to regular season and all playoffs
         last_game_date = games['GAME_DATE'].max()
+        # the above will returns on the current date if they have started
+        # i want to use this to find the last date, prior to today with games played 
+        # if today's date (current date) == last game date then adjust last game date by -1 game dates
+        if self.meta_data['today_dt'] == last_game_date.date():
+            a =  games['GAME_DATE']
+            a = list(set(a)) # remove dups
+            a.sort(reverse=True) # sort desc
+            last_game_date = a[1]
+        # if backfilling and using a today equal to a historical date then find historical date and step 1 date back 
+        elif last_game_date.date() > self.meta_data['today_dt']:
+            a =  games['GAME_DATE']
+            a = list(set(a)) # remove dups
+            a.sort(reverse=True) # sort desc
+            today_idx = a.index(self.meta_data['today_dt'], 0)
+            last_game_date = a[today_idx + 1]
+        
 
         self.games = games.copy()
         self.last_game_date = last_game_date.date()
@@ -267,6 +283,16 @@ class scraper():
                 table_html = table.get_attribute('outerHTML')  # Get table HTML
                 df = pd.read_html(table_html)[0]  # Convert to DataFrame
                 df = df.iloc[:,1:].reset_index(drop=True)
+                # drop multi-index if exists
+                multi_index_check = isinstance(df.keys(), pd.MultiIndex)
+                if multi_index_check:
+                    df.columns = df.columns.droplevel(0)
+                ### drop extra rows in the bref table that are not actual data
+                # drop NaNs 
+                df = df.dropna(subset='Player')
+                # drop second header row and total row
+                values_to_remove = ['Player', 'Team Totals']
+                df = df[~df['Player'].isin(values_to_remove)]
                 df.loc[:,'date'] = self.meta_data['today']
                 df.loc[:,'team'] = i
                 df.columns = bref_cols
@@ -337,7 +363,7 @@ class scraper():
         if self.store_locally:
             self.data_all[database_table] = bref_pos_estimates
 
-        print('bref player pos estimates scraped...')
+        print('bref player pos estimates scraped,',bref_pos_estimates['team'].nunique(), 'teams...')
         return
 
     ################

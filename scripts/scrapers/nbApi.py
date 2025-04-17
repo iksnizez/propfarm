@@ -35,7 +35,8 @@ class nbaApi():
         # meta data - run date, etc.. 
         self.meta_data = {
             'today_dt':datetime.today().date(),
-            'today':datetime.today().strftime('%Y-%m-%d')
+            'today':datetime.today().strftime('%Y-%m-%d'),
+            'today_datetime':datetime.today()
         }
 
         # regex replacement mapping used to make more joinable names
@@ -120,25 +121,47 @@ class nbaApi():
         df = pd.DataFrame(data = data, columns= columns)
         return df
     
-    def get_last_game_date(self, season = '2024-25'):
+    def get_last_game_date(self, season = '2024-25', override = None):
         '''
         searches the season provided for all completed games and returns the dat of the last played
         '''
-        url = 'https://stats.nba.com/stats/leaguegamefinder?Season={season}&PlayerOrTeam=T&LeagueId=00'.format(season=season)
-        games = self.nba_api_get_to_dataframe(url = url)
-    
-        # Convert GAME_DATE to datetime and find the most recent date
-        ##### this data returns all games for the season
-        ##### SEASON_ID: is an identifier followed by starting year of season so xYYYY 
-        ##### for 24-25 season: 12024 = preseason, 22024=reg, 32024=Allstar weekend , 
-        ##### 42024 = playoffs, 52024 = play-ins, 62024 = IST championship 
-        games.loc[:,'GAME_DATE'] = pd.to_datetime(games['GAME_DATE'])
-        games = games[games['SEASON_ID'].astype(str).str.startswith(('2', '4', '5'))] # filter to regular season and all playoffs
-        last_game_date = games['GAME_DATE'].max()
+        if override == None:
 
-        self.games = games.copy()
-        self.last_game_date = last_game_date.date()
-        print("Last day with games played:", last_game_date.date())
+            url = 'https://stats.nba.com/stats/leaguegamefinder?Season={season}&PlayerOrTeam=T&LeagueId=00'.format(season=season)
+            games = self.nba_api_get_to_dataframe(url = url)
+        
+            # Convert GAME_DATE to datetime and find the most recent date
+            ##### this data returns all games for the season
+            ##### SEASON_ID: is an identifier followed by starting year of season so xYYYY 
+            ##### for 24-25 season: 12024 = preseason, 22024=reg, 32024=Allstar weekend , 
+            ##### 42024 = playoffs, 52024 = play-ins, 62024 = IST championship 
+            games.loc[:,'GAME_DATE'] = pd.to_datetime(games['GAME_DATE'])
+            games = games[games['GAME_DATE'] < self.meta_data['today_datetime']]
+            games = games[games['SEASON_ID'].astype(str).str.startswith(('2', '4', '5'))] # filter to regular season and all playoffs
+            last_game_date = games['GAME_DATE'].max()
+            # the above will returns on the current date if they have started
+            # i want to use this to find the last date, prior to today with games played 
+            # if today's date (current date) == last game date then adjust last game date by -1 game dates
+            if self.meta_data['today_dt'] == last_game_date.date():
+                a =  games['GAME_DATE']
+                a = list(set(a)) # remove dups
+                a.sort(reverse=True) # sort desc
+                last_game_date = a[1]
+            # if backfilling and using a today equal to a historical date then find historical date and step 1 date back 
+            elif last_game_date.date() > self.meta_data['today_dt']:
+                a =  games['GAME_DATE']
+                a = list(set(a)) # remove dups
+                a.sort(reverse=True) # sort desc
+                today_idx = a.index(self.meta_data['today_dt'], 0)
+                last_game_date = a[today_idx + 1]
+
+            self.games = games.copy()
+            self.last_game_date = last_game_date.date()
+            print("Last day with games played:", last_game_date.date())
+        
+        else:
+            self.last_game_date = pd.to_datetime(override).date()
+
         return 
     
     ################
@@ -317,7 +340,7 @@ class nbaApi():
     #team
     def request_nba_team_shotzone_data(self,
             season, #'YYYY-YY'
-            start_date, #'MM/DD/YYY'
+            start_date, 
             end_date, 
             per_mode = 'Totals', #['Totals', 'PerGame'] 
             season_type = 'Regular+Season', #['Regular+Season', 'PlayIn', 'Playoffs']

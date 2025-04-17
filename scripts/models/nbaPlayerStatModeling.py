@@ -337,10 +337,10 @@ class playerStatModel():
 
             # players old teams need to be removed or blended
             # TODO MAYBE - blend players stats instead of only taking new teams
-            # Step 1: Get most recent record per player
+            # get most recent record per player
             latest_teams = self.df_player_boxscores.loc[self.df_player_boxscores.groupby('PLAYER_ID')['game_date'].idxmax(), ['PLAYER_ID', 'TEAM_ID']]
 
-            # Step 2: Filter all rows where `pid` has the same `tid` as the latest record
+            # filter all rows where `pid` has the same `tid` as the latest record
             self.df_player_boxscores = self.df_player_boxscores.merge(latest_teams, on= ['PLAYER_ID', 'TEAM_ID'])
 
             columns_players_keep = [
