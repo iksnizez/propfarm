@@ -1,3 +1,5 @@
+#### ONLY USING THIS FOR BASKETBALL REFERENCE NOW. NBA dot com scrape changed to API hit in nbApi.py ####
+
 import pandas as pd
 import json, time, re, requests
 from datetime import datetime

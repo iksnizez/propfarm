@@ -196,7 +196,7 @@ class actNetScraper:
 
         return pymysql_conn_str
 
-    def open_browser(self, browser_path = None, retry_delay = 5, retry_attempts = 3):
+    def open_browser(self, browser_path = None, retry_delay = 60, retry_attempts = 3, ):
         
         # an override browswer path can be provided but normally use the one provided whe nthe class is created 
         if browser_path is None:
@@ -205,6 +205,7 @@ class actNetScraper:
         service = Service(browser_path)
         driver = webdriver.Firefox(service=service)
         driver.set_page_load_timeout(retry_delay)
+        
 
         # start browser
         return driver
@@ -319,7 +320,9 @@ class actNetScraper:
             looper = leagues_override
 
         # open selenium browser
-        driver = self.open_browser(browser_path = self.browser_path, retry_delay = 5, retry_attempts = 3)
+        driver = self.open_browser(browser_path = self.browser_path, retry_delay = 60, retry_attempts = 3)
+
+        driver.set_page_load_timeout(30) 
 
         for i in looper:
             # generate class variable dictionary item for error tracking
@@ -368,7 +371,7 @@ class actNetScraper:
                                 #driver.refresh()
                                 driver.close()
                                 site = self.urls[league].format(site='actionnetwork', proptype= pt, date= frmt_date)
-                                driver = self.open_browser(browser_path = self.browser_path, retry_delay = 5, retry_attempts = 3)
+                                driver = self.open_browser(browser_path = self.browser_path, retry_delay = 30, retry_attempts = 3)
                                 driver.get(site)    
                                 response = driver.page_source
                                 retry_count += 1
