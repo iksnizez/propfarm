@@ -2,18 +2,11 @@ import json, time, requests, random
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support.wait import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
-from selenium.common.exceptions import NoSuchElementException
 from bs4 import BeautifulSoup
 from sqlalchemy import create_engine
 
 
-class actNetScraper:
+class actNetApi:
     
     def __init__(
             self, 
@@ -30,8 +23,7 @@ class actNetScraper:
         self.store_locally = store_locally
         self.config_path = config_path
         self.dates = dates
-        self.second_run = second_run
-        
+        self.second_run = second_run        
         
         # static info for league api's and json storage
         self.over_ids = {
@@ -51,13 +43,33 @@ class actNetScraper:
         # bookid url params removed - bookIds=69,75,68,123,71,32,76,79,369,1599,1533,1900&
         # book ids 15:consenus, 369:mgm, 3585:cesaers
         # stateCode url param removed - stateCode={st}
-        self.urls = {
-            'nba':'https://api.{site}.com/web/v1/leagues/4/props/{proptype}?bookIds=15,369&date={date}',
-            'mlb':'https://api.{site}.com/web/v1/leagues/8/props/{proptype}?bookIds=15,369&date={date}',
-            'nhl':'https://api.{site}.com/web/v1/leagues/3/props/{proptype}?bookIds=15,369&date={date}',
-            'wnba':'https://api.{site}.com/web/v1/leagues/5/props/{proptype}?bookIds=15,369&date={date}',
-            'nfl':'https://api.{site}.com/web/v1/leagues/1/props/{proptype}?bookIds=15,369&date={date}'
+        
+        #'https://api.{site}.com/web/v2/scoreboard/{league}/markets?bookIds=369,2194,2292,3348,3585,3679&customPickTypes={propType}&date={date}',
+        #self.urls = 'https://api.{site}.com/web/v2/scoreboard/{league}/markets?customPickTypes={propType}&date={date}'
+        self.urls = 'https://api.{site}.com/web/v2/scoreboard/{league}/markets'
+        self.params = {
+            "bookIds": "15,30",
+            "customPickTypes": None,
+            "date": None #YYYYMMDD  
         }
+        self.headers = {
+            "Host": "api.actionnetwork.com",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:138.0) Gecko/20100101 Firefox/138.0",
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
+            "Referer": "https://www.actionnetwork.com/{league}/props/",
+            "Origin": "https://www.actionnetwork.com",
+            "DNT": "1",
+            "Sec-GPC": "1",
+            "Connection": "keep-alive",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-site",
+            "Priority": "u=4",
+            "TE": "trailers"
+        }
+
         self.map_option_ids = {
             'nba':{
                 'core_bet_type_27_points':{'o':42, 'u':43, 'type':'pts', 'html_str_responses':[]},
@@ -196,20 +208,15 @@ class actNetScraper:
 
         return pymysql_conn_str
 
-    def open_browser(self, browser_path = None, retry_delay = 60, retry_attempts = 3, ):
-        
-        # an override browswer path can be provided but normally use the one provided whe nthe class is created 
-        if browser_path is None:
-            browser_path = self.browser_path
-        
-        service = Service(browser_path)
-        driver = webdriver.Firefox(service=service)
-        driver.set_page_load_timeout(retry_delay)
-        
+    def gen_self_dict_entry(self, league_name):
+        """
+        used in scraping loop below to add keys for each league that is being scrapped to the error tracking vars
+        """
+        self.scrape_errors[league_name] = {}
+        self.scrape_errors[league_name]['missing_dates'] = []
+        self.scrape_errors[league_name]['missing_props'] = []
+        self.scrape_errors[league_name]['db'] = []
 
-        # start browser
-        return driver
-    
     def check_for_league_games(self, date_check = None, league_check_list = None):
         """
             provide a date and return a list of the leagues with a game today. 
@@ -293,15 +300,6 @@ class actNetScraper:
         
         return leagues_with_games
 
-    def gen_self_dict_entry(self, league_name):
-        """
-        used in scraping loop below to add keys for each league that is being scrapped to the error tracking vars
-        """
-        self.scrape_errors[league_name] = {}
-        self.scrape_errors[league_name]['missing_dates'] = []
-        self.scrape_errors[league_name]['missing_props'] = []
-        self.scrape_errors[league_name]['db'] = []
-
     #############
     # site scraper
 
@@ -319,10 +317,6 @@ class actNetScraper:
         else:
             looper = leagues_override
 
-        # open selenium browser
-        driver = self.open_browser(browser_path = self.browser_path, retry_delay = 60, retry_attempts = 3)
-
-        driver.set_page_load_timeout(30) 
 
         for i in looper:
             # generate class variable dictionary item for error tracking
@@ -342,60 +336,35 @@ class actNetScraper:
                 # update prop dictionary used in scraping code below   
                 self.map_option_ids[i] = {k: v for k, v in self.map_option_ids[i].items() if k in keepers}
             
-            try:
-                league = i.lower()
-                failed = []
 
-                # looping through each prop type on the site  
-                for pt in self.map_option_ids[league].keys():
-                    # looping through each date for a single prop in a the season
-                    for d in self.dates:
-                        # formattin date to add to the url search params
-                        frmt_date = d.replace("-", "")
+            league = i.lower()
+            failed = []
 
-                        # path to webdriver for selenium
-                        try:
-                            site = self.urls[league].format(site='actionnetwork', proptype= pt, date= frmt_date)
-                            driver.get(site)                            
-                            
-                        except:
-                            failed.append(d)
+            # looping through each prop type on the site  
+            for pt in self.map_option_ids[league].keys():
+                # looping through each date for a single prop in a the season
+                for d in self.dates:
+                    # formattin date to add to the url search params
+                    frmt_date = d.replace("-", "")
 
-                        #getting the site page_source data and adding it to the dictionary for storage
-                        response = driver.page_source
-                        
-                        # check for 504 Gateway error - their server times out.
-                        retry_count = 0
-                        while retry_count < 5:
-                            if '504 Gateway Time-out' in response:
-                                #driver.refresh()
-                                driver.close()
-                                site = self.urls[league].format(site='actionnetwork', proptype= pt, date= frmt_date)
-                                driver = self.open_browser(browser_path = self.browser_path, retry_delay = 30, retry_attempts = 3)
-                                driver.get(site)    
-                                response = driver.page_source
-                                retry_count += 1
-                                time.sleep(sleep_secs)
-                            else:
-                                break
+                    # build url, params, headers for requests.get()
+                    url = self.urls.format(site='actionnetwork', league = league)#, proptype= pt, date= frmt_date)
+                    self.params['customPickTypes'] = pt
+                    self.params['date'] = frmt_date
+                    self.headers['Referer'] = self.headers['Referer'].format(league=league)
 
-                        
-                        self.map_option_ids[league][pt]['html_str_responses'].append(response)
+                    response = requests.get(url, headers=self.headers, params=self.params)
 
-                        ########################################
-                        ############ THIS HAS TO BE HERE. I DONT KNOW WHY BUT IT ALLOWS FOR API TO PASS THE DATA
-                        ############ I THINK IF IT GOES BEFORE THE PAGE_SOURCE IT ALLOWS A JAVASCRIPT TO FIRE HIDING THE DATA??
-                        ########################################
-                        time.sleep(sleep_secs)
-                        ##########################################
-                        
+                    if response.status_code != 200:
+                        print(league, d, pt, 'failed...')
+                        failed.append([d, pt])
+                    
+                    data = response.json()
+                    self.map_option_ids[league][pt]['html_str_responses'].append(data)
 
-            except Exception as e:
+                    # sleep to not overload server with requests
+                    time.sleep(sleep_secs)
 
-                print(e)
-                driver.close()
-
-        driver.close()
         return      
 
     # process html
@@ -440,65 +409,33 @@ class actNetScraper:
                     # game date
                     date = self.dates[d]
                     
-                    # converting selenium page_source to html
-                    parsed_html = BeautifulSoup(
-                        self.map_option_ids[league][i]['html_str_responses'][d],
-                        'html.parser'
-                    )
-                    # select the data from the html
-                    try:
-                        html_target_element = parsed_html.find("div", {"id": "json"}).text
-                    except:
-                        missing_dates.append([prop, date, d])
-                        self.scrape_errors[league]['missing_dates'] = [prop, date, d]
-                        continue
-                    
-                    # convert the json string to a dictioanry
-                    json_single_date = json.loads(html_target_element)
+                    json_single_date = self.map_option_ids[league][i]['html_str_responses'][d]
 
-                    #checking if there are multiple books odds provided or none
-                    #IT LOOKS LIKE THEY REMOVED statusCode sometime between 1/6/25 and 1/13/25
-                    if json_single_date.get("statusCode") is not None:
-                            continue
-                    # if there are no markets for the prop then add it to the missing prop list
-                    elif len(json_single_date['markets']) == 0: 
-                    ##if len(json_single_date['markets']) == 0:    
-                        continue
+                    #checking if the consensus line was provided, 
+                    # if not take first market in the list
+                    if json_single_date['markets'].get('15') is None:
+                        book = json_single_date['markets'][
+                            list(json_single_date['markets'].keys())[0]  # first book in the returned data
+                        ]['event'][i]
+                    # use consensu book (15) when available
                     else:
-                        
-                        books = json_single_date['markets'][0]['books']
-                        book_count = len(books)
-                    
-                    # if multiple books, use 15, which is the consensus odds
-                    # else, default to the first book in the data
-                    book = 0
-                    if book_count > 1:
-                        for b in range(0,len(books)):
-                            if books[b]['book_id'] == 15:
-                                book = b
-                            else:    
-                                continue
+                        book = json_single_date['markets']['15']['event'][i]
 
                     # looping through all of the props for a single type and single day
-                    for j in json_single_date['markets'][0]['books'][book]['odds']:
+                    for j in book:
 
                         #props_single_date = []
                         entry = [np.nan] * (len(columns) - 1)
 
-                        # check for odds for the prop on the date
-                        #IT LOOKS LIKE THEY REMOVED statusCode sometime between 1/6/25 and 1/13/25
-                        if j.get("statusCode") is not None:
-                            continue
-                        else:
-                            playerId = j['player_id']
+                        playerId = j['player_id']
 
                         # actnet propId are not unique in MLB or NHL, creating own propId later
-                        actNetPropId = j['prop_id']
+                        actNetPropId = j['market_id']
 
                         ## creating custom propId
                         # random number doesn't work because the random num changes when having to combine over and under
                         #propId = int(str(j['prop_id']) + str(random.random())[2:6])
-                        propId = int(str(j['prop_id']) + str(playerId))
+                        propId = int(str(j['market_id']) + str(playerId))
                                     
                         ou_check = j['option_type_id']
 
@@ -507,50 +444,35 @@ class actNetScraper:
                         if all_props_single_type.get(propId) is None:
                             
                             entry[0] = playerId
-                            entry[1] = j['team_id']
-                            entry[2] = j['game_id']
+                            entry[1] = None # j['team_id']
+                            entry[2] = j['event_id']
                             entry[3] = date
                             entry[4] = prop
                             entry[5] = j['value']  # line
                             entry[17] = actNetPropId # actnetpropId
                             
-                            #the null value from json comes through strange into pandas, forcing nan
-                            if pd.isnull(j['projected_value']):
-                                entry[8] = np.nan
-                            else:
-                                entry[8] = j['projected_value']
-                                            
+                            #act net removed projected value data from v2 api
+                            entry[8] = np.nan
+           
                             #overs and props that don't have over/under designated
                             if ou_check in self.over_ids[league] or ou_check not in self.under_ids[league]:
-                                entry[6] = j['money'] # over odds
+                                entry[6] = j['odds'] # over odds
                             
-                                #the null value from json comes through strange into pandas, forcing nan
-                                if pd.isnull(j['bet_quality'])   :
-                                    entry[11] = np.nan
-                                else:
-                                    entry[11] = j['bet_quality']
-                                    
-                                # data point only available in the more recent games
-                                if j.get('implied_value') is not None:
-                                    entry[9] = j['implied_value']
-                                    entry[10] = j['edge']
-                                    entry[12] = j['grade']
+                                #act net removed projected value data from v2 api
+                                entry[11] = np.nan
+                                entry[9] = np.nan 
+                                entry[10] = np.nan 
+                                entry[12] = np.nan
                                     
                             #unders
                             else:
-                                entry[7] = j['money'] # under odds
+                                entry[7] = j['odds'] # under odds
                             
-                                #the null value from json comes through strange into pandas, forcing nan
-                                if pd.isnull(j['bet_quality'])   :
-                                    entry[15] = np.nan
-                                else:
-                                    entry[15] = j['bet_quality']
-
-                                # data point only available in the more recent games
-                                if j.get('implied_value') is not None:
-                                    entry[13] = j['implied_value']
-                                    entry[14] = j['edge']
-                                    entry[16] = j['grade']
+                                #act net removed projected value data from v2 api
+                                entry[15] = np.nan
+                                entry[13] = np.nan
+                                entry[14] = np.nan
+                                entry[16] = np.nan
 
                             # loading over and under data to the prop id
                             all_props_single_type[propId] = entry
@@ -559,42 +481,17 @@ class actNetScraper:
                         else:
                             #overs
                             if ou_check in self.over_ids[league] or ou_check not in self.under_ids[league]:
-                                all_props_single_type[propId][6] = j['money'] # over odds
+                                all_props_single_type[propId][6] = j['odds'] # over odds
                             
-                                #the null value from json comes through strange into pandas, forcing nan
-                                if pd.isnull(j['bet_quality'])   :
-                                    all_props_single_type[propId][11] = np.nan
-                                else:
-                                    all_props_single_type[propId][11] = j['bet_quality']
-                                    
-                                # data point only available in the more recent games
-                                if j.get('implied_value') is not None:
-                                    all_props_single_type[propId][9] = j['implied_value']
-                                    all_props_single_type[propId][10] = j['edge']
-                                    all_props_single_type[propId][12] = j['grade']
-                                    
-
                             #unders
                             else:
-                                all_props_single_type[propId][7] = j['money'] # under odds
-                            
-                                #the null value from json comes through strange into pandas, forcing nan
-                                if pd.isnull(j['bet_quality'])   :
-                                    all_props_single_type[propId][15] = np.nan
-                                else:
-                                    all_props_single_type[propId][15] = j['bet_quality']
-
-                                # data point only available in the more recent games
-                                if j.get('implied_value') is not None:
-                                    all_props_single_type[propId][13] = j['implied_value']
-                                    all_props_single_type[propId][14] = j['edge']
-                                    all_props_single_type[propId][16] = j['grade'] 
+                                all_props_single_type[propId][7] = j['odds'] # under odds
                                        
                     try:
                         # gather player names
-                        players = json_single_date['markets'][0]['players']
+                        players = json_single_date['players']
                         for p in players:
-                            player = [p['id'], p['full_name'], p['abbr']]
+                            player = [p['id'], p['full_name'], p['abbr']]#, p['team_id']]
                             self.player_list.append(player)
                         self.players_avail = True
                     except: 
@@ -768,4 +665,9 @@ class actNetScraper:
                         specific_props = missing_props
                     )
 
-            
+
+
+    
+
+
+       
