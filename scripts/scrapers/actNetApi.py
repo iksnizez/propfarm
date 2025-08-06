@@ -48,7 +48,7 @@ class actNetApi:
         #self.urls = 'https://api.{site}.com/web/v2/scoreboard/{league}/markets?customPickTypes={propType}&date={date}'
         self.urls = 'https://api.{site}.com/web/v2/scoreboard/{league}/markets'
         self.params = {
-            "bookIds": "15,30",
+            "bookIds": "15,30", #369,2194,2292,3348,3585,3679
             "customPickTypes": None,
             "date": None #YYYYMMDD  
         }
@@ -410,7 +410,7 @@ class actNetApi:
                     date = self.dates[d]
                     
                     json_single_date = self.map_option_ids[league][i]['html_str_responses'][d]
-
+                    
                     #checking if the consensus line was provided, 
                     # if not take first market in the list
                     if json_single_date['markets'].get('15') is None:
@@ -491,7 +491,7 @@ class actNetApi:
                         # gather player names
                         players = json_single_date['players']
                         for p in players:
-                            player = [p['id'], p['full_name'], p['abbr']]#, p['team_id']]
+                            player = [p['id'], p['full_name'], p['abbr'], p['team_id']]
                             self.player_list.append(player)
                         self.players_avail = True
                     except: 
@@ -512,11 +512,14 @@ class actNetApi:
             
             if self.players_avail:
                 # aggregating player to single df 
-                df_players = pd.DataFrame(self.player_list, columns=self.columns_players)           
+                df_players = pd.DataFrame(self.player_list, columns=['playerId','player','abbr','teamId'])           
                 df_players.drop_duplicates('playerId', inplace=True)
                 
+                # act net removed team id from prop data, remove from data frame to add team id from the player data
+                df_props.drop(columns=['teamId'], inplace=True)
                 # merge player names to odds
                 df_props = df_props.merge(df_players, on= 'playerId')
+
 
 
             # when pulling data after the league games start for the day then live bets might be present

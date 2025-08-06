@@ -1,9 +1,9 @@
-#remotes::install_github("sportsdataverse/wehoop")
+#2remotes::install_github("sportsdataverse/wehoop")
 library(wehoop)
 library(DBI)
 library(dplyr)
 library(jsonlite)
-source("scripts/functions/dbhelpers.R")
+source("scripts/functions/dbConnHelpers.R")
 source("scripts/functions/NBAdatacrackers.R")
 
 #####
@@ -20,10 +20,10 @@ library(zoo)
 ##################
 ### static parameters used throughout the script
 league <- 'wnba'
-season  <-  "2023-24"
-s <-  2024
+season  <-  "2024-25"
+s <-  2025
 n.games <- 3
-date_change <- 0  ##<<<<<<<<<<<<<<<<<<<<<<<< <<<<<<<<<<<<<<<< ######use negative for going back days
+date_change <- -5  ##<<<<<<<<<<<<<<<<<<<<<<<< <<<<<<<<<<<<<<<< ######use negative for going back days
 cutoff_date <- Sys.Date() - 12
 search.date <- Sys.Date() + date_change
 
@@ -189,22 +189,22 @@ harvest <- harvest %>%
         rebUscore = round(line_reb - (rebSynth + rebStdL3),3),
         astOscore = round((astSynth - astStdL3) - line_ast,3),
         astUscore = round(line_ast - (astSynth + astStdL3),3),
-        stlOscore = NA, #round((stlSynth - stlStdL3) - line_STL,3),
-        stlUscore = NA, #round(line_STL - (stlSynth + stlStdL3),3),
-        blkOscore = NA, #round((blkSynth - blkStdL3) - line_BLK,3),
-        blkUscore = NA, #round(line_BLK - (blkSynth + blkStdL3),3),
+        #stlOscore = NA, #round((stlSynth - stlStdL3) - line_STL,3),
+        #stlUscore = NA, #round(line_STL - (stlSynth + stlStdL3),3),
+        #blkOscore = NA, #round((blkSynth - blkStdL3) - line_BLK,3),
+        #blkUscore = NA, #round(line_BLK - (blkSynth + blkStdL3),3),
         fg3mOscore = round((fg3mSynth - fg3mStdL3) - line_threes,3),
         fg3mUscore = round(line_threes - (fg3mSynth + fg3mStdL3),3),
-        praOscore = round((praSynth - praStdL3) - line_pra,3),
-        praUscore = round(line_pra - (praSynth + praStdL3),3),
-        prOscore = round((prSynth - prStdL3) - line_pr,3),
-        prUscore = round(line_pr - (prSynth + prStdL3),3),
-        paOscore = round((paSynth - paStdL3) - line_pa,3),
-        paUscore = round(line_pa - (paSynth + paStdL3),3),
-        raOscore = round((raSynth - raStdL3) - line_ra,3),
-        raUscore = round(line_ra - (raSynth + raStdL3),3),
-        sbOscore = NA, #round((sbSynth - sbStdL3) - line_STLBLK,3),
-        sbUscore = NA, #round(line_STLBLK - (sbSynth + sbStdL3),3),
+        #praOscore = round((praSynth - praStdL3) - line_pra,3),
+        #praUscore = round(line_pra - (praSynth + praStdL3),3),
+        #prOscore = round((prSynth - prStdL3) - line_pr,3),
+        #prUscore = round(line_pr - (prSynth + prStdL3),3),
+        #paOscore = round((paSynth - paStdL3) - line_pa,3),
+        #paUscore = round(line_pa - (paSynth + paStdL3),3),
+        #raOscore = round((raSynth - raStdL3) - line_ra,3),
+        #raUscore = round(line_ra - (raSynth + raStdL3),3),
+        #sbOscore = NA, #round((sbSynth - sbStdL3) - line_STLBLK,3),
+        #sbUscore = NA, #round(line_STLBLK - (sbSynth + sbStdL3),3),
         date = as.Date(date, format="%Y-%m-%d"),
         game_id = as.numeric(game_id)
     )
@@ -331,14 +331,14 @@ yesterday.harvest <- yesterday.harvest %>%
         win_pts = ifelse(act_pts > line_pts, "o", "u"),
         win_reb = ifelse(act_reb > line_reb, "o", "u"),
         win_ast = ifelse(act_ast > line_ast, "o", "u"),
-        win_stl = NA, #ifelse(act_stl > line_stl, "o", "u"),
-        win_blk = NA, #ifelse(act_blk > line_blk, "o", "u"),
+        #win_stl = NA, #ifelse(act_stl > line_stl, "o", "u"),
+        #win_blk = NA, #ifelse(act_blk > line_blk, "o", "u"),
         win_threes = ifelse(act_threes > line_threes, "o", "u"),
-        win_pra = ifelse(act_pra > line_pra, "o", "u"),
-        win_pr = ifelse(act_pr > line_pr, "o", "u"),
-        Win_pa = ifelse(act_pa > line_pa, "o", "u"),
-        win_ra = ifelse(act_ra > line_ra, "o", "u"),
-        win_sb = NA #ifelse(act_sb > line_sb, "o", "u")
+        #win_pra = ifelse(act_pra > line_pra, "o", "u"),
+        #win_pr = ifelse(act_pr > line_pr, "o", "u"),
+        #Win_pa = ifelse(act_pa > line_pa, "o", "u"),
+        #win_ra = ifelse(act_ra > line_ra, "o", "u"),
+        #win_sb = NA #ifelse(act_sb > line_sb, "o", "u")
     )
 
 # sending the data back to the db for updating the table
