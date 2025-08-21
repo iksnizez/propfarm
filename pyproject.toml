@@ -1,0 +1,26 @@
+[project]
+name = "propfarm"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "pandas",
+  "numpy",
+  "beautifulsoup4",
+  "selenium",
+  "requests",
+  "jupyterlab",
+  "fsspec",
+  "pybaseball",
+  "mlb-statsapi",
+  "nba-api",
+  "mysql-connector-python",
+  "pymysql",
+  "sqlalchemy",
+  "py-ball",
+  "openpyxl",
+  "dash",
+  "statsmodels",
+  "scikit-learn",
+  "ipykernel",
+  "lxml>=6.0.0",
+]
