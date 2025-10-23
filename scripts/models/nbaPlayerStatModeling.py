@@ -14,6 +14,22 @@ from statsmodels.tsa.stattools import adfuller
 from scipy.optimize import minimize
 from sklearn.linear_model import Ridge
 
+##### importing custom modules from the projects folder
+import sys
+from pathlib import Path
+# Start at current working directory
+current = Path.cwd()
+# Walk up the tree until config.py is found or root is reached
+for parent in [current] + list(current.parents):
+    config_path = parent / "config.py"
+    if config_path.exists():
+        sys.path.append(str(parent))
+        import config # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< 
+        break
+else:
+    raise FileNotFoundError("config.py not found in any parent directories")
+
+import scripts.functions.NBAhelperfunctions as hf
 
 #TODO:
 ###### immediate
@@ -22,55 +38,6 @@ from sklearn.linear_model import Ridge
 ####### longer term
 ### add minutes adjustment ( fade expected minutes if injured or increase if increasing role)
 ### explore penalizing early and afternoon games 1 - 6pm 
-
-def calculate_pace_adjustment(team_pace, opp_pace):
-    # uses geometric mean to calulate pace adjuster
-    return np.sqrt(team_pace * opp_pace) / opp_pace
-
-def connect_to_database(database_creds = '../../../../Notes-General/config.txt'):
-    database_creds = database_creds
-    #importing credentials from txt file
-    with open(database_creds, 'r') as f:
-        creds = f.read()
-    creds = json.loads(creds)
-
-    league = "nba"
-    pymysql_conn_str = creds['pymysql'][league]
-
-    engine = create_engine(pymysql_conn_str)
-    return engine
-
-def calculate_reb_adjustment(opp_reb_pct, league_avg_reb_pct):
-    
-    # offensive reb adj = (1 - opp def. reb %) / (league avg offensive reb%)
-    # defensive reb adj = (1 - opp off. reb %) / (league avg defensive reb%)
-    reb_adj = (1 - opp_reb_pct) /   league_avg_reb_pct
-
-    return reb_adj
-
-def calculate_opp_adjustment(opp_stat_conceded, league_avg_opp_stat_conceded):
-    stats_adj = opp_stat_conceded / league_avg_opp_stat_conceded
-    return stats_adj
-
-def convert_probability_to_ameri_odds(prob):
-    if (prob == 0) | (prob == 1) | (pd.isnull(prob)): 
-        return np.nan   
-    elif prob >= 0.5:
-        american =  -100 * (prob / (1 - prob))  # Favorite
-    else:
-        american = 100 * ((1 - prob) / prob)  # Underdog
-
-    return int(american)
-
-def convert_probability_to_deci_odds(prob):   
-    if (prob == 0) | (prob == 1) | (pd.isnull(prob)): 
-        return np.nan
-    elif prob > 0:
-        decimal = round(1 / prob, 3)
-    else:
-        decimal = np.nan
-
-    return decimal
 
 class playerStatModel():
     
@@ -250,9 +217,8 @@ class playerStatModel():
         # use format to input perMode (per), season id (sid), and team id (tid)
         url_base_nba_player_stat = 'https://stats.nba.com/stats/leaguedashplayerstats?College=&Conference=&Country=&DateFrom=&DateTo=&Division=&DraftPick=&DraftYear=&GameScope=&GameSegment=&Height=&LastNGames=0&LeagueID=00&Location=&MeasureType=Base&Month=0&OpponentTeamID=0&Outcome=&PORound=0&PaceAdjust=N&PerMode={per}&Period=0&PlayerExperience=&PlayerPosition=&PlusMinus=N&Rank=N&Season={sid}&SeasonSegment=&SeasonType=Regular+Season&ShotClockRange=&StarterBench=&TeamID={tid}&TwoWay=0&VsConference=&VsDivision=&Weight=',
         minute_cutoff = 15.0,
-        season = '2025',
-        pull_players_from_nbaapi = False,
-        database_creds = '../../../../Notes-General/config.txt'
+        season = '2026',
+        pull_players_from_nbaapi = False
     ):
         """
         using the team ids from get_teams_playing(), aggregate player data stats of interest
@@ -327,7 +293,7 @@ class playerStatModel():
             """
             params = tuple([season] + self.list_team_ids)
 
-            engine = connect_to_database(database_creds = database_creds)
+            engine = hf.connect_to_database(database_creds = config.PYMYSQL_NBA)
             with engine.connect() as conn:
                 self.df_player_boxscores = pd.read_sql_query(
                     sql = query,
@@ -356,9 +322,8 @@ class playerStatModel():
             #df_players.loc[:,'FG2_PCT'] = df_players['FG2M'] / df_players['FG2A']            
             df_players.loc[:,'FG3_PCT'] = df_players['FG3M'] / df_players['FG3A']
             df_players.loc[:,'FT_PCT'] = df_players['FTM'] / df_players['FTA']
-
-
-
+        
+        # FILTER OUT PLAYERS BELOW MINUTE CUTOFF
         df_players = df_players[df_players['MIN'] >= minute_cutoff]
 
         ### processing
@@ -392,31 +357,31 @@ class playerStatModel():
                 'PACE_y':'oppPACE'
             })
 
-            df_players.loc[:, 'PACEadj'] = df_players.apply(lambda x: calculate_pace_adjustment(
+            df_players.loc[:, 'PACEadj'] = df_players.apply(lambda x: hf.calculate_pace_adjustment(
                                                                             x['PACE'], 
                                                                             x['oppPACE']
                                                                     ), 
                                                             axis = 1
             )
-            df_players.loc[:, 'OREBadj'] = df_players.apply(lambda x: calculate_reb_adjustment(
+            df_players.loc[:, 'OREBadj'] = df_players.apply(lambda x: hf.calculate_reb_adjustment(
                                                                             opp_reb_pct = x['DREB_PCT'], 
                                                                             league_avg_reb_pct = self.league_avg_oreb_pct
                                                                     ), 
                                                             axis = 1
             )
-            df_players.loc[:, 'DREBadj'] = df_players.apply(lambda x: calculate_reb_adjustment(
+            df_players.loc[:, 'DREBadj'] = df_players.apply(lambda x: hf.calculate_reb_adjustment(
                                                                             opp_reb_pct = x['OREB_PCT'], 
                                                                             league_avg_reb_pct = self.league_avg_dreb_pct
                                                                     ), 
                                                             axis = 1
             ) 
-            df_players.loc[:, 'PTSadj'] = df_players.apply(lambda x: calculate_opp_adjustment(
+            df_players.loc[:, 'PTSadj'] = df_players.apply(lambda x: hf.calculate_opp_adjustment(
                                                 opp_stat_conceded = x['oppPts'],
                                                 league_avg_opp_stat_conceded = self.league_avg_oppPts
                                         ), 
                                 axis = 1
             )
-            df_players.loc[:, 'ASTadj'] = df_players.apply(lambda x: calculate_opp_adjustment(
+            df_players.loc[:, 'ASTadj'] = df_players.apply(lambda x: hf.calculate_opp_adjustment(
                                                 opp_stat_conceded = x['oppAst'],
                                                 league_avg_opp_stat_conceded = self.league_avg_oppAst
                                         ), 
@@ -446,7 +411,7 @@ class playerStatModel():
             JOIN players p ON o.playerId = p.actnetId
             WHERE DATE(o.date) = %s;
         """
-        engine = connect_to_database()
+        engine = hf.connect_to_database()
 
         # query database for props
         with engine.connect() as connection:
@@ -700,6 +665,7 @@ class playerStatModel():
         self.df_players = df.copy()
         return
 
+    # TODO mean reversion
     def model_stat_mean_reversion(self):
         pass
 
@@ -743,8 +709,8 @@ class playerStatModel():
         sim_pts = (fg2m * 2) + (fg3m * 3) + ftm
 
         df['PTSoProb'] = (sim_pts >= df['pts_line'].values[:, None]).sum(axis=1) / self.num_simulations
-        df.loc[:,'PTSoOdds'] = df['PTSoProb'].apply(convert_probability_to_ameri_odds)
-        df.loc[:,'PTSoOdds_deci'] = df['PTSoProb'].apply(convert_probability_to_deci_odds)
+        df.loc[:,'PTSoOdds'] = df['PTSoProb'].apply(hf.convert_probability_to_ameri_odds)
+        df.loc[:,'PTSoOdds_deci'] = df['PTSoProb'].apply(hf.convert_probability_to_deci_odds)
 
         # ----- FG3M ----
         # conversions needed to make sure models don't error out on NaNs
@@ -759,8 +725,8 @@ class playerStatModel():
         # Compute probability of exactly x FG3 made
         df['FG3MoProb'] = (fg3m >= df['threes_line'].values[:, None]).sum(axis=1) / self.num_simulations
         df['FG3MoProb'] = df['FG3MoProb'].fillna(0).astype(float)
-        df.loc[:,'FG3MoOdds'] =  df['FG3MoProb'].apply(convert_probability_to_ameri_odds)
-        df.loc[:,'FG3MoOdds_deci'] = df['FG3MoProb'].apply(convert_probability_to_deci_odds)
+        df.loc[:,'FG3MoOdds'] =  df['FG3MoProb'].apply(hf.convert_probability_to_ameri_odds)
+        df.loc[:,'FG3MoOdds_deci'] = df['FG3MoProb'].apply(hf.convert_probability_to_deci_odds)
 
         df.loc[:,'FG3MoProb'] = np.where((df['threes_line'] == 0) | (pd.isnull(df['threes_line'])), 0, df['FG3MoProb'])
         df.loc[:,'FG3MoOdds'] = np.where((df['threes_line'] == 0) | (pd.isnull(df['threes_line'])), 0, df['FG3MoOdds'])
@@ -770,59 +736,59 @@ class playerStatModel():
         sim_reb = np.random.poisson(df['expReb'].values[:, None], (len(df), self.num_simulations))
         df['REBoProb'] = (sim_reb >= df['reb_line'].values[:, None]).sum(axis=1) / self.num_simulations
         
-        df.loc[:,'REBoOdds'] =  df['REBoProb'].apply(convert_probability_to_ameri_odds)
-        df.loc[:,'REBoOdds_deci'] = df['REBoProb'].apply(convert_probability_to_deci_odds)
+        df.loc[:,'REBoOdds'] =  df['REBoProb'].apply(hf.convert_probability_to_ameri_odds)
+        df.loc[:,'REBoOdds_deci'] = df['REBoProb'].apply(hf.convert_probability_to_deci_odds)
         
         # ----- AST ----- 
         sim_ast = np.random.poisson(df['expAst'].values[:, None], (len(df), self.num_simulations))
         df['ASToProb'] = (sim_ast >= df['ast_line'].values[:, None]).sum(axis=1) / self.num_simulations
 
-        df.loc[:,'ASToOdds'] =  df['ASToProb'].apply(convert_probability_to_ameri_odds)
-        df.loc[:,'ASToOdds_deci'] = df['ASToProb'].apply(convert_probability_to_deci_odds)
+        df.loc[:,'ASToOdds'] =  df['ASToProb'].apply(hf.convert_probability_to_ameri_odds)
+        df.loc[:,'ASToOdds_deci'] = df['ASToProb'].apply(hf.convert_probability_to_deci_odds)
 
         # ----- STL ----- 
         sim_ast = np.random.poisson(df['expStl'].values[:, None], (len(df), self.num_simulations))
         df['STLoProb'] = (sim_ast >= df['stl_line'].values[:, None]).sum(axis=1) / self.num_simulations
 
-        df.loc[:,'STLoOdds'] =  df['STLoProb'].apply(convert_probability_to_ameri_odds)
-        df.loc[:,'STLoOdds_deci'] = df['STLoProb'].apply(convert_probability_to_deci_odds)
+        df.loc[:,'STLoOdds'] =  df['STLoProb'].apply(hf.convert_probability_to_ameri_odds)
+        df.loc[:,'STLoOdds_deci'] = df['STLoProb'].apply(hf.convert_probability_to_deci_odds)
 
         # ----- BLK ----- 
         sim_ast = np.random.poisson(df['expBlk'].values[:, None], (len(df), self.num_simulations))
         df['BLKoProb'] = (sim_ast >= df['blk_line'].values[:, None]).sum(axis=1) / self.num_simulations
 
-        df.loc[:,'BLKoOdds'] =  df['BLKoProb'].apply(convert_probability_to_ameri_odds)
-        df.loc[:,'BLKoOdds_deci'] = df['BLKoProb'].apply(convert_probability_to_deci_odds)
+        df.loc[:,'BLKoOdds'] =  df['BLKoProb'].apply(hf.convert_probability_to_ameri_odds)
+        df.loc[:,'BLKoOdds_deci'] = df['BLKoProb'].apply(hf.convert_probability_to_deci_odds)
 
         ### ----- COMBO STATS ----- ####
         # ----- PRA -----
         sim_pra = sim_pts + sim_reb + sim_ast
         df['PRAoProb'] = (sim_pra >= df['pra_line'].values[:, None]).sum(axis=1) / self.num_simulations
-        df.loc[:,'PRAoOdds'] = df['PRAoProb'].apply(convert_probability_to_ameri_odds)
-        df.loc[:,'PRAoOdds_deci'] = df['PRAoProb'].apply(convert_probability_to_deci_odds)
+        df.loc[:,'PRAoOdds'] = df['PRAoProb'].apply(hf.convert_probability_to_ameri_odds)
+        df.loc[:,'PRAoOdds_deci'] = df['PRAoProb'].apply(hf.convert_probability_to_deci_odds)
 
         # ----- PR -----
         sim_pr = sim_pts + sim_reb
         df['PRoProb'] = (sim_pr >= df['pr_line'].values[:, None]).sum(axis=1) / self.num_simulations
-        df.loc[:,'PRoOdds'] = df['PRoProb'].apply(convert_probability_to_ameri_odds)
-        df.loc[:,'PRoOdds_deci'] = df['PRoProb'].apply(convert_probability_to_deci_odds)
+        df.loc[:,'PRoOdds'] = df['PRoProb'].apply(hf.convert_probability_to_ameri_odds)
+        df.loc[:,'PRoOdds_deci'] = df['PRoProb'].apply(hf.convert_probability_to_deci_odds)
 
         # ----- PA -----
         sim_pa = sim_pts + sim_ast
         df['PAoProb'] = (sim_pa >= df['pa_line'].values[:, None]).sum(axis=1) / self.num_simulations
-        df.loc[:,'PAoOdds'] = df['PAoProb'].apply(convert_probability_to_ameri_odds)
-        df.loc[:,'PAoOdds_deci'] = df['PAoProb'].apply(convert_probability_to_deci_odds)
+        df.loc[:,'PAoOdds'] = df['PAoProb'].apply(hf.convert_probability_to_ameri_odds)
+        df.loc[:,'PAoOdds_deci'] = df['PAoProb'].apply(hf.convert_probability_to_deci_odds)
 
         # ----- RA -----
         sim_ra = sim_reb + sim_ast
         df['RAoProb'] = (sim_ra >= df['ra_line'].values[:, None]).sum(axis=1) / self.num_simulations
-        df.loc[:,'RAoOdds'] = df['RAoProb'].apply(convert_probability_to_ameri_odds)
-        df.loc[:,'RAoOdds_deci'] = df['RAoProb'].apply(convert_probability_to_deci_odds)
+        df.loc[:,'RAoOdds'] = df['RAoProb'].apply(hf.convert_probability_to_ameri_odds)
+        df.loc[:,'RAoOdds_deci'] = df['RAoProb'].apply(hf.convert_probability_to_deci_odds)
 
         # ----- SB -----
         df['SBoProb'] = (sim_ra >= df['sb_line'].values[:, None]).sum(axis=1) / self.num_simulations
-        df.loc[:,'SBoOdds'] = df['SBoProb'].apply(convert_probability_to_ameri_odds)
-        df.loc[:,'SBoOdds_deci'] = df['SBoProb'].apply(convert_probability_to_deci_odds)
+        df.loc[:,'SBoOdds'] = df['SBoProb'].apply(hf.convert_probability_to_ameri_odds)
+        df.loc[:,'SBoOdds_deci'] = df['SBoProb'].apply(hf.onvert_probability_to_deci_odds)
 
         self.df_players = df.copy()
         return 
@@ -832,7 +798,7 @@ if __name__ == '__main__':
 
     model = playerStatModel(
         day_offset = 0, 
-        season = '2024-25', 
+        season = '2025-26', 
         perMode = 'PerGame',
         num_simulations = 10000
     )

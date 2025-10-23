@@ -5,6 +5,20 @@ from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 from sqlalchemy import create_engine
 
+##### importing custom modules from the projects folder
+import sys
+from pathlib import Path
+# Start at current working directory
+current = Path.cwd()
+# Walk up the tree until config.py is found or root is reached
+for parent in [current] + list(current.parents):
+    config_path = parent / "config.py"
+    if config_path.exists():
+        sys.path.append(str(parent))
+        import config # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< 
+        break
+else:
+    raise FileNotFoundError("config.py not found in any parent directories")
 
 class actNetApi:
     
@@ -15,13 +29,11 @@ class actNetApi:
             leagues = None,
             database_export = False, 
             store_locally=True, 
-            config_path = '../../../../Notes-General/config.txt',
             second_run = False,
         ):
         self.browser_path = browser_path
         self.database_export = database_export
         self.store_locally = store_locally
-        self.config_path = config_path
         self.dates = dates
         self.second_run = second_run        
         
@@ -130,19 +142,21 @@ class actNetApi:
                 'core_bet_type_71_passing_rushing_yards':{'o':406, 'u':407, 'type':'passRushYds', 'html_str_responses':[], 'id':2926},
                 'core_bet_type_11_passing_tds':{'o':10, 'u':11, 'type':'passTds', 'html_str_responses':[], 'id':363},
                 'core_bet_type_9_passing_yards':{'o':6, 'u':7, 'type':'passYds', 'html_str_responses':[], 'id':361},
-                'core_bet_type_17_receiving_tds':{'o':22, 'u':23, 'type':'recTds', 'html_str_responses':[], 'id':369},
+                #'core_bet_type_17_receiving_tds':{'o':22, 'u':23, 'type':'recTds', 'html_str_responses':[], 'id':369},
                 'core_bet_type_16_receiving_yards':{'o':20, 'u':21, 'type':'recYds', 'html_str_responses':[], 'id':368},
                 'core_bet_type_15_receptions':{'o':18, 'u':19, 'type':'rec', 'html_str_responses':[], 'id':367},
                 'core_bet_type_66_rushing_receiving_yards':{'o':402, 'u':403, 'type':'recRushYds', 'html_str_responses':[], 'id':2828},
                 'core_bet_type_18_rushing_attempts':{'o':24, 'u':25, 'type':'rushAtt', 'html_str_responses':[], 'id':370},
-                'core_bet_type_13_rushing_tds':{'o':14, 'u':15, 'type':'rushTds', 'html_str_responses':[], 'id':365},
+                #'core_bet_type_13_rushing_tds':{'o':14, 'u':15, 'type':'rushTds', 'html_str_responses':[], 'id':365},
                 'core_bet_type_12_rushing_yards':{'o':12, 'u':13, 'type':'rushYds', 'html_str_responses':[], 'id':364},
                 'core_bet_type_70_tackles_assists':{'o':404, 'u':405, 'type':'tackles', 'html_str_responses':[], 'id':2893},
-                'core_bet_type_65_interceptions':{'o':400, 'u':401, 'type':'int', 'html_str_responses':[], 'id':2827}
-                # pass atm
-                # pass comp
-                # pat
-                # fgs
+                'core_bet_type_65_interceptions':{'o':400, 'u':401, 'type':'int', 'html_str_responses':[], 'id':2827},
+                'core_bet_type_30_passing_attempts':{'o':48, 'u':49, 'type':'passAtts', 'html_str_responses':[], 'id':None},
+                'core_bet_type_10_pass_completions':{'o':8, 'u':9, 'type':'passComp', 'html_str_responses':[], 'id':None},
+                'core_bet_type_578_sacks':{'o':2372, 'u':2373, 'type':'sacks', 'html_str_responses':[], 'id':None},
+                'core_bet_type_43_kicking_points':{'o':102, 'u':103, 'type':'kickingPts', 'html_str_responses':[], 'id':None},
+                'core_bet_type_213_field_goals_made':{'o':512, 'u':513, 'type':'fgm', 'html_str_responses':[], 'id':None},
+                'core_bet_type_212_extra_points_made':{'o':510, 'u':511, 'type':'pat', 'html_str_responses':[], 'id':None}
             }
         }
         self.prop_names ={
@@ -160,9 +174,11 @@ class actNetApi:
            
             ],
             'nfl':[
-                'tdOne', 'tdTwo', 'tdThree', 'tdFirst', 'int' 'passLong', 'recLong', 'rushLong',
-                'passRushYds','passTds','passYds','recTds', 'recYds', 'rec', 'recRushYds', 'rushAtt', 
-                'rushTds', 'rushYds', 'tackles'
+                'tdOne', 'tdTwo', 'tdThree', 'tdFirst', 'int', 'passLong', 'recLong', 'rushLong',
+                'passRushYds','passTds','passYds',#'recTds', 
+                'recYds', 'rec', 'recRushYds', 'rushAtt', 
+                #'rushTds', 
+                'rushYds', 'tackles', 'int', 'passAtts', 'passComp', 'sacks', 'kickingPts', 'fgm', 'pat'
             ]
         }
         self.schedule_urls = {
@@ -196,15 +212,9 @@ class actNetApi:
 
     #############
     # general helper funcs
-    def get_pymysql_conn_str(self, league, config_path = '../../../../Notes-General/config.txt'):
+    def get_pymysql_conn_str(self, league):
         
-        with open(config_path, 'r') as f:
-            creds = f.read()
-
-        creds = json.loads(creds)
-        league = league
-        pymysql_conn_str = creds['pymysql'][league]
-        del creds
+        pymysql_conn_str = config.map_conn_str[league]
 
         return pymysql_conn_str
 
@@ -346,7 +356,7 @@ class actNetApi:
                 for d in self.dates:
                     # formattin date to add to the url search params
                     frmt_date = d.replace("-", "")
-
+                    
                     # build url, params, headers for requests.get()
                     url = self.urls.format(site='actionnetwork', league = league)#, proptype= pt, date= frmt_date)
                     self.params['customPickTypes'] = pt
@@ -383,7 +393,7 @@ class actNetApi:
 
 
         for league in looper:
-            print('scraping', league, '...')
+            print('processing', league, '...')
             league = league.lower()
             missing_dates = []
 
@@ -414,6 +424,7 @@ class actNetApi:
                     #checking if the consensus line was provided, 
                     # if not take first market in the list
                     if json_single_date['markets'].get('15') is None:
+                        print(prop)
                         book = json_single_date['markets'][
                             list(json_single_date['markets'].keys())[0]  # first book in the returned data
                         ]['event'][i]
@@ -427,7 +438,16 @@ class actNetApi:
                         #props_single_date = []
                         entry = [np.nan] * (len(columns) - 1)
 
-                        playerId = j['player_id']
+                        # nhl has a no goal scorer for anytime goal. it does not have a player_id key in the dict
+                        # skip the entry for nhl only 
+                        if league == 'nhl':
+                            try:
+                                playerId = j['player_id']
+                            except:
+                                continue
+
+                        else:
+                            playerId = j['player_id']
 
                         # actnet propId are not unique in MLB or NHL, creating own propId later
                         actNetPropId = j['market_id']
@@ -605,8 +625,7 @@ class actNetApi:
 
         # connect to db
         pymysql_conn_str = self.get_pymysql_conn_str(
-            league = league, 
-            config_path = self.config_path
+            league = league 
         )
         sqlEngine = create_engine(pymysql_conn_str, pool_recycle=3600)
         

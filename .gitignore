@@ -23,3 +23,5 @@ scripts/bettingscrape.R
 scripts/.ipynb_checkpoints/
 scripts/sqlTesting.sql
 scripts/linescraper-Copy1.ipynb
+.env
+*.pyc

@@ -3,25 +3,38 @@ import numpy as np
 import json, requests, time, re
 from datetime import datetime
 
+##### importing custom modules from the projects folder
+import sys
+from pathlib import Path
+# Start at current working directory
+current = Path.cwd()
+# Walk up the tree until config.py is found or root is reached
+for parent in [current] + list(current.parents):
+    config_path = parent / "config.py"
+    if config_path.exists():
+        sys.path.append(str(parent))
+        import config # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< 
+        break
+else:
+    raise FileNotFoundError("config.py not found in any parent directories")
+
+
+
 class nbaApi():
-    def __init__(self, browser_path, database_export = False, store_locally=True, pymysql_conn_str = None):
+    def __init__(self, 
+        browser_path, 
+        database_export = False, 
+        store_locally=True, 
+        pymysql_conn_str = None
+    ):
+        
         self.browser_path = browser_path
         self.database_export = database_export
         self.store_locally = store_locally
         
         # connection string
         if pymysql_conn_str is None:
-            
-            #importing credentials from my txt file  
-            # #TODO remove the hard coded path
-            with open('../../../../Notes-General/config.txt', 'r') as f:
-                creds = f.read()
-
-            creds = json.loads(creds)
-            league = "nba"
-            self.pymysql_conn_str = creds['pymysql'][league]
-            del creds
-
+            self.pymysql_conn_str = config.PYMYSQL_NBA
         else:
             self.pymysql_conn_str = pymysql_conn_str
         
@@ -40,24 +53,7 @@ class nbaApi():
         }
 
         # regex replacement mapping used to make more joinable names
-        self.suffix_replace = {
-            "\\.":"", "`":"", "'":"",
-            " III$":"", " IV$":"", " II$":"", " iii$":"", " ii$":"", " iv$":"", " v$":"", " V$":"",
-            " jr$":"", " sr$":"", " jr.$":"", " sr.$":"", " Jr$":"", " Sr$":"", " Jr.$":"", " Sr.$":"", 
-            " JR$":"", " SR$":"", " JR.$":"", " SR.$":"",
-            "š":"s","ş":"s", "š":"s", 'š':"s", "š":"s",
-            "ž":"z",
-            "þ":"p","ģ":"g",
-            "à":"a","á":"a","â":"a","ã":"a","ä":"a","å":"a",'ā':"a",
-            "ç":"c",'ć':"c", 'č':"c",
-            "è":"e","é":"e","ê":"e","ë":"e",'é':"e",
-            "ì":"i","í":"i","î":"i","ï":"i", "İ":"I",	
-            "ð":"o","ò":"o","ó":"o","ô":"o","õ":"o","ö":"o",'ö':"o",
-            "ù":"u","ú":"u","û":"u","ü":"u","ū":"u",
-            "ñ":"n","ņ":"n",
-            "ý":"y",
-            "Dario .*":"dario saric", "Alperen .*":"alperen sengun", "Luka.*amanic":"luka samanic"
-        }
+        self.suffix_replace = config.suffix_replace
     
     ##################
     # general functions
@@ -121,7 +117,7 @@ class nbaApi():
         df = pd.DataFrame(data = data, columns= columns)
         return df
     
-    def get_last_game_date(self, season = '2024-25', override = None):
+    def get_last_game_date(self, season = '2025-26', override = None):
         '''
         searches the season provided for all completed games and returns the dat of the last played
         '''

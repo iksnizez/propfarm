@@ -1,4 +1,22 @@
-#### ONLY USING THIS FOR BASKETBALL REFERENCE NOW. NBA dot com scrape changed to API hit in nbApi.py ####
+''' 
+###############################################################################################
+ONLY USING THIS FOR BASKETBALL REFERENCE NOW. NBA dot com scrape changed to API hit in nbApi.py
+###############################################################################################
+'''
+##### importing custom modules from the projects folder
+import sys
+from pathlib import Path
+# Start at current working directory
+current = Path.cwd()
+# Walk up the tree until config.py is found or root is reached
+for parent in [current] + list(current.parents):
+    config_path = parent / "config.py"
+    if config_path.exists():
+        sys.path.append(str(parent))
+        import config # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< 
+        break
+else:
+    raise FileNotFoundError("config.py not found in any parent directories")
 
 import pandas as pd
 import json, time, re, requests
@@ -21,24 +39,19 @@ class scraper():
     nba.com, basketball-reference.com
     """
 
-    def __init__(self, browser_path, database_export = False, store_locally=True, pymysql_conn_str = None):
+    def __init__(self, 
+        browser_path, 
+        database_export = False, 
+        store_locally=True, 
+        pymysql_conn_str = None
+    ):
         self.browser_path = browser_path
         self.database_export = database_export
         self.store_locally = store_locally
         
         # connection string
         if pymysql_conn_str is None:
-            
-            #importing credentials from my txt file  
-            # #TODO remove the hard coded path
-            with open('../../../../Notes-General/config.txt', 'r') as f:
-                creds = f.read()
-
-            creds = json.loads(creds)
-            league = "nba"
-            self.pymysql_conn_str = creds['pymysql'][league]
-            del creds
-
+            self.pymysql_conn_str = config.map_conn_str['nba']
         else:
             self.pymysql_conn_str = pymysql_conn_str
         
@@ -56,24 +69,7 @@ class scraper():
         }
 
         # regex replacement mapping used to make more joinable names
-        self.suffix_replace = {
-            "\\.":"", "`":"", "'":"",
-            " III$":"", " IV$":"", " II$":"", " iii$":"", " ii$":"", " iv$":"", " v$":"", " V$":"",
-            " jr$":"", " sr$":"", " jr.$":"", " sr.$":"", " Jr$":"", " Sr$":"", " Jr.$":"", " Sr.$":"", 
-            " JR$":"", " SR$":"", " JR.$":"", " SR.$":"",
-            "š":"s","ş":"s", "š":"s", 'š':"s", "š":"s",
-            "ž":"z",
-            "þ":"p","ģ":"g",
-            "à":"a","á":"a","â":"a","ã":"a","ä":"a","å":"a",'ā':"a",
-            "ç":"c",'ć':"c", 'č':"c",
-            "è":"e","é":"e","ê":"e","ë":"e",'é':"e",
-            "ì":"i","í":"i","î":"i","ï":"i", "İ":"I",	
-            "ð":"o","ò":"o","ó":"o","ô":"o","õ":"o","ö":"o",'ö':"o",
-            "ù":"u","ú":"u","û":"u","ü":"u","ū":"u",
-            "ñ":"n","ņ":"n",
-            "ý":"y",
-            "Dario .*":"dario saric", "Alperen .*":"alperen sengun", "Luka.*amanic":"luka samanic"
-        }
+        self.suffix_replace = config.suffix_replace
 
         # nba site xpaths
         self.buttonXpath = "/html/body/div[1]/div[2]/div[2]/div[3]/section[2]/div/div[2]/div[2]/div[1]/div[3]/div/label/div/select"#/option[1]"
@@ -174,7 +170,7 @@ class scraper():
         df = pd.DataFrame(data = data, columns= columns)
         return df
     
-    def get_last_game_date(self, season = '2024-25'):
+    def get_last_game_date(self, season = '2025-26'):
         '''
         searches the season provided for all completed games and returns the dat of the last played
         '''
@@ -217,7 +213,7 @@ class scraper():
         self,
         base_url = 'https://www.basketball-reference.com/teams/{team}/{season}.html#pbp', 
         today_date = None,
-        season = 2025,
+        season = 2026,
         database_table = 'brefmisc',
         team_overrides = None
     ):
