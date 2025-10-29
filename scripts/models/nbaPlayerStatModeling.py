@@ -232,9 +232,11 @@ class playerStatModel():
         player_stats_list = []
         teams = self.list_team_ids
         
-        # pulls data from NBA website
+        #### going to the nba website needs to be reworked.
+        #### current iteration does not create boxscores for every player/game. only season avg
+        # pulls data from NBA website  
         if pull_players_from_nbaapi:
-        
+            """
             for i in range(len(teams)):
                 team_id = teams[i]
                 roster = []
@@ -260,6 +262,7 @@ class playerStatModel():
                 'AST','TOV', 'STL', 'BLK', 'BLKA', 'PF', 'PFD', 'PTS', 'PLUS_MINUS'
                 ]
                 temp = pd.DataFrame(roster, columns = columns_player_stats)
+                print(temp.columns)
                 # players stay in team data even after switching teams but their team_abbreviation changes
                 # gather the most common team abbreviation on the team (it should be the actual team matching the id)
                 correct_team = temp['TEAM_ABBREVIATION'].value_counts()[:1].index.tolist()
@@ -271,7 +274,10 @@ class playerStatModel():
         
             df_players = pd.concat(player_stats_list)
             df_players = df_players[df_players['TEAM_ID'].isin(teams)][columns_players_keep]
-        
+            """
+            pass
+            
+
         # pull from database - pulls players individual game box scores and calcs totals -> averages
         else:
             # Generate placeholders dynamically based on number of teams in game list 
@@ -680,6 +686,7 @@ class playerStatModel():
 
         # Allocate FG2A and FG3A based on condition
         #TODO consider trying to model the greater of fg3a vs fg2a first . might not matter
+        
         #fg2a = np.where(df['FG2A'].values[:, None] >= df['FG3A'].values[:, None],
         #    np.random.binomial(df['modeledFGA_FTA'].values[:, None], df['shotshareFG2A'].values[:, None]),
         #    np.random.binomial(
@@ -692,7 +699,9 @@ class playerStatModel():
         #        df['modeledFGA_FTA'].values[:, None] - np.random.binomial(df['modeledFGA_FTA'].values[:, None], df['shotshareFG2A'].values[:, None]), 
         #        df['shotshareFG3A'].values[:, None] / (df['shotshareFG3A'].values[:, None] + df['shotshareFTA'].values[:, None]))
         #)
+
         fg2a = np.random.binomial(sim_shots, df['shotshareFG2A'].values[:, None], size=sim_shots.shape)      
+
         #TODO handle when a player takes no fg3a or fta and then remove filter in notebook
         fg3a = np.random.binomial(sim_shots - fg2a, 
             df['shotshareFG3A'].values[:, None] / (df['shotshareFG3A'].values[:, None] + df['shotshareFTA'].values[:, None]),

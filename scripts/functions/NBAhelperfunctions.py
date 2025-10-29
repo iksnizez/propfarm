@@ -17,10 +17,9 @@ import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine
 
-def calculate_pace_adjustment(team_pace, opp_pace):
-    # uses geometric mean to calulate pace adjuster
-    return np.sqrt(team_pace * opp_pace) / opp_pace
-
+# -------------------------------------------------------------------------------
+# Functions for database connections
+# -------------------------------------------------------------------------------
 def connect_to_database(database_creds = config.PYMYSQL_NBA):
     #database_creds = database_creds
     ##importing credentials from txt file
@@ -34,6 +33,22 @@ def connect_to_database(database_creds = config.PYMYSQL_NBA):
     engine = create_engine(pymysql_conn_str)
     return engine
 
+# -------------------------------------------------------------------------------
+# Functions for updating database
+# -------------------------------------------------------------------------------
+def update_pbp_database():
+    pass
+
+def update_player_boxscores():
+    pass
+
+# -------------------------------------------------------------------------------
+# Functions for help calculating stats for modeling 
+# -------------------------------------------------------------------------------
+def calculate_pace_adjustment(team_pace, opp_pace):
+    # uses geometric mean to calulate pace adjuster
+    return np.sqrt(team_pace * opp_pace) / opp_pace
+
 def calculate_reb_adjustment(opp_reb_pct, league_avg_reb_pct):
     # offensive reb adj = (1 - opp def. reb %) / (league avg offensive reb%)
     # defensive reb adj = (1 - opp off. reb %) / (league avg defensive reb%)
@@ -45,6 +60,9 @@ def calculate_opp_adjustment(opp_stat_conceded, league_avg_opp_stat_conceded):
     stats_adj = opp_stat_conceded / league_avg_opp_stat_conceded
     return stats_adj
 
+# -------------------------------------------------------------------------------
+# Functions for converting odds and probs 
+# -------------------------------------------------------------------------------
 def convert_probability_to_ameri_odds(prob):
     if (prob == 0) | (prob == 1) | (pd.isnull(prob)): 
         return np.nan   
@@ -64,3 +82,4 @@ def convert_probability_to_deci_odds(prob):
         decimal = np.nan
 
     return decimal
+

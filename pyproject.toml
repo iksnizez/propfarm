@@ -24,4 +24,6 @@ dependencies = [
   "ipykernel",
   "lxml>=6.0.0",
   "python-dotenv>=1.1.1",
+  "haversine>=2.9.0",
+  "openrouteservice>=2.3.3",
 ]

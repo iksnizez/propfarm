@@ -25,6 +25,7 @@ PYMYSQL_NBA=os.environ.get('PYMYSQL_NBA')
 PYMYSQL_MLB=os.environ.get('PYMYSQL_MLB')
 PYMYSQL_NHL=os.environ.get('PYMYSQL_NHL')
 PYMYSQL_WNBA=os.environ.get('PYMYSQL_WNBA')
+KEY_OPENROUTESERVICE=os.environ.get('KEY_OPENROUTESERVICE')
 map_conn_str = {
     'nba':PYMYSQL_NBA,
     'wnba':PYMYSQL_WNBA,
@@ -36,7 +37,8 @@ map_conn_str = {
 # config data 
 DATA_DIR = PROJECT_ROOT / 'data'
 LOGOS_DIR = DATA_DIR / 'teamLogos'
-ARENA_DISTANCES = DATA_DIR / 'arena distances and loc data//arenaDistanceMatrix_teamIds nba.csv'
+ARENA_DISTANCES_DIR = DATA_DIR / 'arena distances and loc data'
+ARENA_DISTANCES = ARENA_DISTANCES_DIR / 'arenaDistanceFlightMatrix_nbaId.csv'
 BROWSER_DIR = PROJECT_ROOT / 'browser'
 SCRIPTS_DIR = PROJECT_ROOT / 'scripts'
 

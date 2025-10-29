@@ -13,7 +13,7 @@ googleway::set_key(key = key)
 
 
 #import location data ***** requires lat and long coordinates ****** 
-df <- read.csv('data/arenas.csv')
+df <- read.csv('data/arena distances and loc data/arenas.csv')
 df <- df %>% 
         select(team, lat, long)
 
@@ -64,7 +64,7 @@ colnames(dfMiles) <-  df$team
 dfMiles$origin <-  df$team
 dfMiles$type <- 'mi'
 
-#write.csv(dfMiles, 'data/arenaDistanceMatrix.csv',row.names = FALSE)
+write.csv(dfMiles, 'data/arena distances and loc data/arenaDistanceMatrix.csv',row.names = FALSE)
 
 
 #######

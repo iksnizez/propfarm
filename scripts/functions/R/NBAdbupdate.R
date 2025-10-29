@@ -1,10 +1,10 @@
-season <- "2024-25"
-s <- 2025
+season <- "2025-26"
+s <- 2026
 
 library(hoopR)
 library(DBI)
 library(dplyr)
-source("scripts/functions/dbConnhelpers.R")
+source("scripts/functions/R/dbConnhelpers.R")
 
 league <- "nba"
 
@@ -19,6 +19,7 @@ dbSendQuery(conn, "SET GLOBAL local_infile = true;")
 # get last date in db and filter season boxes
 last.date.query <- paste("SELECT MAX(game_date) FROM pbp WHERE season = ", s, ";", sep="")
 last.date <- dbGetQuery(conn, last.date.query)[[1]]
+#last.date = '2025-10-20' ########### FIRST LOAD OF THE SEASON NEEDS MANUAL DATE BEFORE FIRST GAME
 print(paste("pbp: last loaded date = ", last.date))
 
 df <- hoopR::load_nba_pbp(s) %>% filter(game_date > last.date)
@@ -32,6 +33,7 @@ DBI::dbWriteTable(conn, name = "pbp", value= data.frame(df), row.names = FALSE, 
 # get last date in db and filter season boxes
 last.date.query <- paste("SELECT MAX(game_date) FROM playerbox WHERE season = ", s, ";", sep="")
 last.date <- dbGetQuery(conn, last.date.query)[[1]]
+#last.date = '2025-10-20' ########### FIRST LOAD OF THE SEASON NEEDS MANUAL DATE BEFORE FIRST GAME
 print(paste("playerbox: last loaded date = ", last.date))
 
 df <- hoopR::load_nba_player_box(s) %>% filter(game_date > last.date)

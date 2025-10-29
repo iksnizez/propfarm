@@ -89,14 +89,18 @@ class seasonTeamTravelDistanceCalculator():
 
 
             # reformat that data so each team has a unique record for all of their games
-            home_df = df_games[['gameId', 'gameDate', 'homeTeam_teamId', 'awayTeam_teamId']].copy()
+            home_df = df_games[['gameId', 'gameDate', 'homeTeam_teamId', 'awayTeam_teamId', 'homeTeam_teamName', 'awayTeam_teamName']].copy()
             home_df['teamId'] = home_df['homeTeam_teamId'].astype(int)
+            home_df['team'] = home_df['homeTeam_teamName']
             home_df['oppId'] = home_df['awayTeam_teamId'].astype(int)
+            home_df['opp'] = home_df['awayTeam_teamName']
             home_df['home'] = True
 
-            away_df = df_games[['gameId', 'gameDate', 'homeTeam_teamId', 'awayTeam_teamId']].copy()
+            away_df = df_games[['gameId', 'gameDate', 'homeTeam_teamId', 'awayTeam_teamId', 'homeTeam_teamName', 'awayTeam_teamName']].copy()
             away_df['teamId'] = away_df['awayTeam_teamId'].astype(int)
+            away_df['team'] = away_df['awayTeam_teamName']
             away_df['oppId'] = away_df['homeTeam_teamId'].astype(int)
+            away_df['opp'] = away_df['homeTeam_teamName']
             away_df['home'] = False
 
             df_long = pd.concat([home_df, away_df], ignore_index=True)
@@ -105,7 +109,6 @@ class seasonTeamTravelDistanceCalculator():
 
             # add travel distances, road streaks, days rest, trip distances,
             # back-to-backs, and return flights.
-            
             df_long = df_long.sort_values(['teamId', 'gameDate'])
             df_long['prev_date'] = df_long.groupby('teamId')['gameDate'].shift(1)
             
@@ -115,7 +118,7 @@ class seasonTeamTravelDistanceCalculator():
             df_long['days_rest'] = (df_long['gameDate'] - df_long['prev_date']).dt.days - 1
 
             # Identify back-to-back games
-            df_long['is_b2b'] = (df_long['days_rest'] == 0).astype(int)
+            df_long['is_b2b'] = df_long['days_rest'] == 0
 
             # Previous opponent and home flag
             df_long['prev_opp'] = (df_long.groupby('teamId')['oppId'].shift(1, fill_value = 0)).astype(int)
@@ -148,7 +151,6 @@ class seasonTeamTravelDistanceCalculator():
             
             # season long cumulative miles
             df_long['cum_miles_season'] = df_long.groupby('teamId')['distance_miles'].cumsum()
-
 
             # Road streak counter - increments from 1+ on consecutive road games
             # resets to zero after home game
@@ -187,6 +189,18 @@ class seasonTeamTravelDistanceCalculator():
             df_long['cum_days_road_trip'] = df_long.groupby(
                 (df_long['road_trip_days'] == 0).cumsum()
                 )['road_trip_days'].cumsum()
+            
+            final_order = [
+                'gameId', 'gameDate', 
+                'team','opp', 'home', 'is_b2b', 'prev_home', 'next_home', 'days_rest',
+                     'distance_miles',  'road_trip_streak',
+                'road_trip_dist', 'cum_miles_road_trip', 
+                'cum_days_road_trip', 'cum_miles_season','road_trip_days',
+                'prev_date', 'days_since_last_game', 'prev_opp',
+                'arena_from','arena_to', 'homeTeam_teamName', 'awayTeam_teamName',
+                'homeTeam_teamId', 'awayTeam_teamId', 'teamId','oppId'
+            ]
+            df_long = df_long[final_order]
 
             self.schedules['processed'][k] = df_long
         return 
