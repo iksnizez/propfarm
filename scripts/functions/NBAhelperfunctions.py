@@ -83,3 +83,25 @@ def convert_probability_to_deci_odds(prob):
 
     return decimal
 
+def convert_ameri_odds_to_probability(odds):
+    """
+    Convert American odds to implied probabilities.
+
+    Parameters
+    ----------
+    odds : pd.Series or np.ndarray
+        Series or array of American odds (e.g., +150, -120).
+
+    Returns
+    -------
+    pd.Series
+        Series of implied probabilities (0–1 range).
+    """
+    odds = pd.Series(odds, dtype=float)
+    probs = np.where(
+        odds > 0,
+        round(100 / (odds + 100), 3),
+        round(-odds / (-odds + 100), 3)
+    )
+    
+    return probs

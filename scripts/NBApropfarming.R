@@ -11,15 +11,15 @@ library(rvest) # html scraping
 library(zoo) # rolling averages
 #RETICULATE_PYTHON="../propfarmVenv/Scripts/python"
 #library(reticulate) # running python script to get the odds scrape
-source("scripts/functions/NBAdatacrackers.R")
-source("scripts/functions/dbConnHelpers.R")
+source("scripts/functions/R/NBAdatacrackers.R")
+source("scripts/functions/R/dbConnHelpers.R")
 
 ##################
 # Setting variables and hitting api
 ##################
 ### static parameters used throughout the script
 league <- 'nba'
-season  <-  "2024-25"
+season  <-  "2025-26"
 s <-  2025
 n.games <- 3
 last.n.games.rank <- 10 ##<<<<<<<<<<<<<< <<<<<<<<<<<<<<<<<< # used to calc the last n games stats teams have surrended to pos.

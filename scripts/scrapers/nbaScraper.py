@@ -1,6 +1,7 @@
 ''' 
 ###############################################################################################
-ONLY USING THIS FOR BASKETBALL REFERENCE NOW. NBA dot com scrape changed to API hit in nbApi.py
+ONLY USING THIS FOR BASKETBALL REFERENCE AND ESPN ODDS SCRAPES NOW. 
+NBA dot com scrape changed to API hit in nbApi.py
 ###############################################################################################
 '''
 ##### importing custom modules from the projects folder
@@ -363,6 +364,73 @@ class scraper():
 
         print('bref player pos estimates scraped,',bref_pos_estimates['team'].nunique(), 'teams...')
         return
+
+    ################
+    # es p n com scrapes
+    def get_game_odds(self, database_table = 'gameOdds'):
+        espn_url = "https://site.web.api.espn.com/apis/personalized/v2/scoreboard/header?sport=basketball&league=nba&region=us&lang=en&contentorigin=espn&configuration=STREAM_MENU&platform=web&features=sfb-all%2Ccutl&buyWindow=1m&showAirings=buy%2Clive%2Creplay&showZipLookup=true&tz=America%2FNew_York&postalCode=20010&playabilitySource=playbackId"
+        r = requests.get(espn_url)
+        json_data = json.loads(r.text)
+        games = json_data['sports'][0]['leagues'][0]['events']
+
+        dt = self.meta_data['today_dt']
+
+        games_data = []
+        for i in games:
+            gid = i['id']
+            #dt  = pd.to_datetime(i['date']).date()
+            season = i['season'].int()
+            game_type = i['seasonType']
+            week = i['week']
+
+            # get home and away desi
+            teams = i['competitors']
+
+            if teams[0]['homeAway'] == 'home':
+                homeTeamId = teams[0]['id']
+                homeTeamAbbrv = teams[0]['abbreviation']        
+                awayTeamId = teams[1]['id']
+                awayTeamAbbrv = teams[1]['abbreviation']
+
+            else:
+                homeTeamId = teams[1]['id']
+                homeTeamAbbrv = teams[1]['abbreviation']
+                awayTeamId = teams[0]['id']
+                awayTeamAbbrv = teams[0]['abbreviation']
+
+            # get odds data
+            odds = i['odds']
+
+            total = odds['overUnder']
+            homeSpread = odds['pointSpread']['home']['close']['line'].replace('+','')
+            awaySpread = odds['pointSpread']['away']['close']['line'].replace('+','')
+            homeSpreadOdds = odds['pointSpread']['home']['close']['odds']
+            awaySpreadOdds = odds['pointSpread']['away']['close']['odds']
+            homeMoneyline = odds['home']['moneyLine']
+            awayMoneyline = odds['away']['moneyLine']
+
+
+            temp = [
+                gid, dt, season, game_type, week, homeTeamId, homeTeamAbbrv, awayTeamId, awayTeamAbbrv, total, homeSpread, homeSpreadOdds, homeMoneyline, awaySpread, awaySpreadOdds, awayMoneyline
+            ]
+            
+            games_data.append(temp)
+
+        cols = [
+            'espnGid', 'gameDate', 'season', 'gameType', 'week', 'espnHomeTid', 'homeTeam', 'espnAwayTid', 'awayTeam', 'total', 'homeSpread', 'homeSpreadOdds', 'homeMoneyline', 'awaySpread', 'awaySpreadOdds', 'awayMoneyline'
+        ]
+        df_odds = pd.DataFrame(
+            games_data, columns=cols
+        )
+
+        
+
+        if self.database_export:
+            self.export_database(df_odds, database_table, self.pymysql_conn_str)
+
+        # add to main class object holding all data
+        if self.store_locally:
+            self.data_all[database_table] = df_odds
 
     ################
     # nba com scrapes

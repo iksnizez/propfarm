@@ -18,6 +18,8 @@ for parent in [current] + list(current.parents):
 else:
     raise FileNotFoundError("config.py not found in any parent directories")
 
+import scripts.functions.NBAhelperfunctions as hf
+
 '''
 nba cup elimination game dates?
 12/9/25, 12/10/25, 12/13/25, 12/16/25
@@ -28,12 +30,13 @@ class seasonTeamTravelDistanceCalculator():
     def __init__(self):
         self.schedules = {
             'raw':{},
-            'processed':{}
+            'processed':{},
+            'historical':None
         }
 
     def get_arena_distances(self):
         '''
-        retrieve arena-to-arena distances in miles
+        retrieve arena-to-arena distances in miles from csv built from distanceTraveledCalc.py
         '''
         # arena to arena distances in miles
         arena_distances = pd.read_csv(config.ARENA_DISTANCES)
@@ -49,15 +52,27 @@ class seasonTeamTravelDistanceCalculator():
         self.arena_distances = arena_distances.copy()
         return 
 
-    def get_season_schedule(self, season_str):
+    def get_season_schedule(self, season_str, remove_gametypes = ['001', '003', '004', '005', '006']):
         '''
         grab the season schedule from nba_api
         season_str = 'YYYY-YY'  2024-25
         cutoff_date = date or datetime, used to filter schedule up to the date
+
+        game ID keys - first 3 digits
+        001 = preseason
+        002 = regular season
+        003 = all star events
+        004 = playoffs
+        005 = play-in games
+        006 = nba cup finals
         '''
         # load schedules
         sched = ScheduleLeagueV2(league_id='00', season=season_str)
         games = sched.season_games.get_data_frame()
+
+        #filter out game types if input
+        if remove_gametypes:
+            games = games[~games['gameId'].str.startswith(tuple(remove_gametypes))]
 
         self.schedules['raw'][season_str] = games
         return
@@ -89,14 +104,14 @@ class seasonTeamTravelDistanceCalculator():
 
 
             # reformat that data so each team has a unique record for all of their games
-            home_df = df_games[['gameId', 'gameDate', 'homeTeam_teamId', 'awayTeam_teamId', 'homeTeam_teamName', 'awayTeam_teamName']].copy()
+            home_df = df_games.copy()
             home_df['teamId'] = home_df['homeTeam_teamId'].astype(int)
             home_df['team'] = home_df['homeTeam_teamName']
             home_df['oppId'] = home_df['awayTeam_teamId'].astype(int)
             home_df['opp'] = home_df['awayTeam_teamName']
             home_df['home'] = True
 
-            away_df = df_games[['gameId', 'gameDate', 'homeTeam_teamId', 'awayTeam_teamId', 'homeTeam_teamName', 'awayTeam_teamName']].copy()
+            away_df = df_games.copy()
             away_df['teamId'] = away_df['awayTeam_teamId'].astype(int)
             away_df['team'] = away_df['awayTeam_teamName']
             away_df['oppId'] = away_df['homeTeam_teamId'].astype(int)
@@ -193,14 +208,222 @@ class seasonTeamTravelDistanceCalculator():
             final_order = [
                 'gameId', 'gameDate', 
                 'team','opp', 'home', 'is_b2b', 'prev_home', 'next_home', 'days_rest',
-                     'distance_miles',  'road_trip_streak',
+                'distance_miles',  'road_trip_streak',
                 'road_trip_dist', 'cum_miles_road_trip', 
                 'cum_days_road_trip', 'cum_miles_season','road_trip_days',
                 'prev_date', 'days_since_last_game', 'prev_opp',
                 'arena_from','arena_to', 'homeTeam_teamName', 'awayTeam_teamName',
-                'homeTeam_teamId', 'awayTeam_teamId', 'teamId','oppId'
+                'homeTeam_teamId', 'awayTeam_teamId', 'teamId','oppId',
+
             ]
             df_long = df_long[final_order]
 
             self.schedules['processed'][k] = df_long
+
         return 
+    
+    def process_historical_schedules(self):
+        
+       
+        # -----------------build travel dataset-----------------------
+        # process schedule logs  and add travel distances
+        count = 0
+        # loop through the schedules for the seasons pulled
+        for k, v in self.schedules['raw'].items():
+            count += 1
+
+            # get the raw schedules for each saved season
+            df_games = v.copy()
+
+            # remove preseason games and filter through requested date
+            df_games = df_games.query('weekNumber > 0')
+
+            df_games.loc[:,'gameDate'] = pd.to_datetime(df_games['gameDate'])
+
+            # select cols
+            cols = [
+                'seasonYear',  'gameId', 'weekNumber',
+                'homeTeam_teamId', 'homeTeam_teamName','homeTeam_teamTricode', 
+                'homeTeam_wins', 'homeTeam_losses',
+                'awayTeam_teamId', 'awayTeam_teamName', 'awayTeam_teamTricode',
+                'awayTeam_wins', 'awayTeam_losses',
+                'homeTeam_score','awayTeam_score',
+                'gameDate', 'awayTeamTime', 'homeTeamTime', 'day', 'monthNum', 
+                'arenaName', 'arenaState', 'arenaCity'
+            ]
+            df_games = df_games[cols]
+
+
+            # reformat that data so each team has a unique record for all of their games
+            home_df = df_games.copy()
+            home_df['teamId'] = home_df['homeTeam_teamId'].astype(int)
+            home_df['team'] = home_df['homeTeam_teamName']
+            home_df['oppId'] = home_df['awayTeam_teamId'].astype(int)
+            home_df['opp'] = home_df['awayTeam_teamName']
+            home_df['home'] = True
+            home_df['win'] = home_df['homeTeam_score'] > home_df['awayTeam_score']
+
+            away_df = df_games.copy()
+            away_df['teamId'] = away_df['awayTeam_teamId'].astype(int)
+            away_df['team'] = away_df['awayTeam_teamName']
+            away_df['oppId'] = away_df['homeTeam_teamId'].astype(int)
+            away_df['opp'] = away_df['homeTeam_teamName']
+            away_df['home'] = False
+            away_df['win'] = away_df['homeTeam_score'] < away_df['awayTeam_score']
+
+            df_long = pd.concat([home_df, away_df], ignore_index=True)
+            df_long['gameDate'] = pd.to_datetime(df_long['gameDate'])
+            #df_long = df_long.sort_values(['teamId', 'gameDate'])
+
+            # add travel distances, road streaks, days rest, trip distances,
+            # back-to-backs, and return flights.
+            df_long = df_long.sort_values(['teamId', 'gameDate'])
+            df_long['prev_date'] = df_long.groupby('teamId')['gameDate'].shift(1)
+            
+            # calandar games between games NOT REST DAYS
+            df_long['days_since_last_game'] = ((df_long['gameDate'] - df_long['prev_date']).dt.days)
+            # rest days between games
+            df_long['days_rest'] = (df_long['gameDate'] - df_long['prev_date']).dt.days - 1
+
+            # Identify back-to-back games
+            df_long['is_b2b'] = df_long['days_rest'] == 0
+
+            # Previous opponent and home flag
+            df_long['prev_opp'] = (df_long.groupby('teamId')['oppId'].shift(1, fill_value = 0)).astype(int)
+            df_long['prev_home'] = df_long.groupby('teamId')['home'].shift(1, fill_value=True)
+            df_long['next_home'] = df_long.groupby('teamId')['home'].shift(-1)
+
+            ### generate travel paths for each game
+            df_long['arena_from'] = np.where(
+                df_long['prev_home'],
+                df_long['teamId'],
+                df_long['prev_opp']
+            )
+            df_long['arena_to'] = np.where(
+                df_long['home'],
+                df_long['teamId'],
+                df_long['oppId']
+            )
+
+            # add driving miles 
+            df_long = pd.merge(
+                df_long,
+                self.arena_distances,
+                how='left',
+                left_on=['arena_from', 'arena_to'],
+                right_on=['from_team_id', 'to_team_id']
+            )
+            df_long = df_long.drop(['from_team_id','to_team_id'], axis = 1)
+
+            df_long['distance_miles'] = df_long['distance_miles'].fillna(0)
+            
+            # season long cumulative miles
+            df_long['cum_miles_season'] = df_long.groupby('teamId')['distance_miles'].cumsum()
+
+            # Road streak counter - increments from 1+ on consecutive road games
+            # resets to zero after home game
+            df_long['road_trip_streak'] = (
+                df_long.groupby('teamId')['home']
+                .apply(lambda x: (~x).cumsum() - (~x).cumsum().where(x).ffill().fillna(0).astype(int))
+                .reset_index(drop=True)
+            )
+
+            # distance column used to calculate the cumulative miles per each road trip
+            # it sets home games distance traveled to zero even when going away to home
+            # this away to home zero is used below in the road trip cumsum to reset it
+            df_long['road_trip_dist'] = np.where(
+                df_long['road_trip_streak'] == 0,
+                0,
+                df_long['distance_miles']
+            )
+            # calculates the cumsum for each road trip
+            # resets for every new road trip
+            df_long['cum_miles_road_trip'] = df_long.groupby(
+                (df_long['road_trip_dist'] == 0).cumsum()
+                )['road_trip_dist'].cumsum()
+            
+            # calculates the number of cal. days on a road trip
+            df_long['road_trip_days'] = np.where(
+                df_long['road_trip_streak'] == 0,
+                0,
+                np.where(
+                    df_long['road_trip_streak'] == 1,
+                    1,
+                    df_long['days_since_last_game']
+                ) 
+            )
+            # calculates the cumsum for each road trip
+            # resets for every new road trip
+            df_long['cum_days_road_trip'] = df_long.groupby(
+                (df_long['road_trip_days'] == 0).cumsum()
+                )['road_trip_days'].cumsum()
+
+            df_long['gameDate'] = pd.to_datetime(df_long['gameDate']).dt.date
+            
+            final_order = [
+                'gameId', 'gameDate', 'seasonYear','weekNumber','day', 'monthNum', 
+                'win', 'team', 'opp', 'homeTeam_score','awayTeam_score',
+                'home', 'is_b2b', 'prev_home', 'next_home', 'days_rest',
+                'distance_miles',  'road_trip_streak',
+                'road_trip_dist', 'cum_miles_road_trip', 
+                'cum_days_road_trip', 'cum_miles_season','road_trip_days',
+                'prev_date', 'days_since_last_game', 'prev_opp',
+                'homeTeam_wins', 'homeTeam_losses', 'awayTeam_wins', 'awayTeam_losses',
+                'awayTeamTime', 'homeTeamTime',
+                'arena_from','arena_to', 'homeTeam_teamName', 'awayTeam_teamName',
+                'homeTeam_teamId', 'awayTeam_teamId', 'teamId','oppId',
+                'arenaName', 'arenaState', 'arenaCity'
+            ]
+            df_long = df_long[final_order]
+
+            self.schedules['processed'][k] = df_long
+
+            if count == 1:
+                self.schedules['historical'] = df_long
+
+            else:
+                self.schedules['historical'] = pd.concat([
+                    self.schedules['historical'], df_long
+                ])
+            
+        
+        # ---------------- add in historical game odds data --------------
+        
+        # This is filterst > 2017 beacuse the schedule data only goes back to 2017-18
+        # the odds data season = the last year of the season
+        query = """
+            SELECT 
+                g.gameDate, 
+                t_home.nbaTid AS homeTeam_teamId, 
+                t_away.nbaTid AS awayTeam_teamId, 
+                g.total, 
+                g.homeSpread, 
+                g.homeMoneyline, 
+                g.awaySpread, 
+                g.awayMoneyline
+            FROM gameodds g
+            LEFT JOIN teams as t_home
+                ON g.espnHomeTid = t_home.espnTid
+            LEFT JOIN teams as t_away
+                ON g.espnAwayTid = t_away.espnTid
+            WHERE season > 2017;
+        """
+        connection_str = hf.connect_to_database()
+        with connection_str.connect() as conn:
+            df_odds = pd.read_sql_query(
+                sql = query,
+                con = conn
+            )
+        print(df_odds.shape[0], 'games returned...')
+
+        # merge odds to the travel odds
+        self.schedules['historical'] = pd.merge(
+            left = self.schedules['historical'], 
+            right = df_odds,
+            on=['gameDate', 'homeTeam_teamId', 'awayTeam_teamId'],
+            how='left'
+        )
+        #self.df_odds = df_odds.copy()
+        #self.schedules['historical'] = df_long.copy()
+
+        return
