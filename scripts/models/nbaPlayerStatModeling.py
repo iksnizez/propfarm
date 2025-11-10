@@ -797,7 +797,7 @@ class playerStatModel():
         # ----- SB -----
         df['SBoProb'] = (sim_ra >= df['sb_line'].values[:, None]).sum(axis=1) / self.num_simulations
         df.loc[:,'SBoOdds'] = df['SBoProb'].apply(hf.convert_probability_to_ameri_odds)
-        df.loc[:,'SBoOdds_deci'] = df['SBoProb'].apply(hf.onvert_probability_to_deci_odds)
+        df.loc[:,'SBoOdds_deci'] = df['SBoProb'].apply(hf.convert_probability_to_deci_odds)
 
         self.df_players = df.copy()
         return 

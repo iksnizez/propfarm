@@ -33,6 +33,51 @@ class seasonTeamTravelDistanceCalculator():
             'processed':{},
             'historical':None
         }
+        
+        self.covid_season = '2019-20'
+        self.covid_stop = pd.to_datetime('2020-03-11')
+        self.covid_bubble_start = pd.to_datetime('2020-07-30')
+        self.covid_bubble_end = pd.to_datetime('2020-10-11')
+        self.season_start_post_covid = pd.to_datetime('2020-12-22')
+
+        self.all_star_breaks = {
+            '2017-18':{
+                'start':'2018-02-16',
+                'end':'2018-02-21',
+            }, 
+            '2018-19':{
+                'start':'2019-02-15',
+                'end':'2019-02-20'
+            }, 
+            '2019-20':{
+                'start':'2020-02-14',
+                'end':'2020-02-19'
+            }, 
+            '2020-21':{
+                'start':'2021-03-05',
+                'end':'2021-03-09'
+            }, 
+            '2021-22':{
+                'start':'2022-02-18',
+                'end':'2022-02-23'
+            }, 
+            '2022-23':{
+                'start':'2023-02-17',
+                'end':'2023-02-22'
+            },
+            '2023-24':{
+                'start':'2024-02-16',
+                'end':'2024-02-21'
+            },
+            '2024-25':{
+                'start':'2025-02-14',
+                'end':'2025-02-19'
+            },
+            '2025-26':{
+                'start':'2026-02-13',
+                'end':'2026-02-18'
+            },
+        }
 
     def get_arena_distances(self):
         '''
@@ -122,6 +167,15 @@ class seasonTeamTravelDistanceCalculator():
             df_long['gameDate'] = pd.to_datetime(df_long['gameDate'])
             df_long = df_long.sort_values(['teamId', 'gameDate'])
 
+            # remove covid bubble games since there was no travel
+            print('filtering covid bubble games...')
+            print(df_long.shape[0])
+            df_long = df_long[
+                (df_long['gameDate'] < self.covid_bubble_start) |
+                (df_long['gameDate'] > self.covid_bubble_end)
+            ]
+            print(df_long.shape[0])
+
             # add travel distances, road streaks, days rest, trip distances,
             # back-to-backs, and return flights.
             df_long = df_long.sort_values(['teamId', 'gameDate'])
@@ -152,7 +206,7 @@ class seasonTeamTravelDistanceCalculator():
                 df_long['oppId']
             )
 
-            # add driving miles 
+            # add travel miles 
             df_long = pd.merge(
                 df_long,
                 self.arena_distances,
@@ -167,13 +221,53 @@ class seasonTeamTravelDistanceCalculator():
             # season long cumulative miles
             df_long['cum_miles_season'] = df_long.groupby('teamId')['distance_miles'].cumsum()
 
+            ################## add first game after all-star break flag ##################
+            # get the end date for the asb from each season
+            asb_end_dates = {season: v['end'] for season, v in self.all_star_breaks.items()}
+            # convert to series - season = index
+            asb_cutoffs = pd.Series(asb_end_dates).apply(pd.to_datetime)
+            # add the date to the dataframe
+            df_long['asb_end_date'] = df_long['seasonYear'].map(asb_cutoffs)
+            # temp dataframe to find the first game after asb for each team/season
+            df_filtered = df_long[df_long['gameDate'] > df_long['asb_end_date']]
+            result = (
+                df_filtered.sort_values('gameDate')
+                .groupby(['team', 'seasonYear'], as_index=False)
+                .first()[['team', 'seasonYear', 'gameDate']]
+            )
+            # merge temp dataframe to create a new column that marks the teams first game back from the asb
+            df_long = df_long.merge(
+                result,
+                on=['team', 'seasonYear', 'gameDate'],
+                how='left',
+                indicator='first_game_after_asb'
+            )
+            df_long['first_game_after_asb'] = df_long['first_game_after_asb'] == 'both'
+            ################################################################################
+
+
             # Road streak counter - increments from 1+ on consecutive road games
             # resets to zero after home game
+            """
             df_long['road_trip_streak'] = (
                 df_long.groupby('teamId')['home']
                 .apply(lambda x: (~x).cumsum() - (~x).cumsum().where(x).ffill().fillna(0).astype(int))
                 .reset_index(drop=True)
             )
+            """
+            df_long['road_trip_streak'] = (
+                df_long.groupby(['teamId', 'seasonYear'], group_keys=False)
+                .apply(
+                    lambda g: (
+                        (~g['home'] & ~g['first_game_after_asb']).cumsum()
+                        - (~g['home'] & ~g['first_game_after_asb']).cumsum()
+                        .where(g['home'] | g['first_game_after_asb'])
+                        .ffill().fillna(0).astype(int)
+                    ),
+                    include_groups=False  # <-- key to silencing the warning
+                )
+            )
+            
 
             # distance column used to calculate the cumulative miles per each road trip
             # it sets home games distance traveled to zero even when going away to home
@@ -275,6 +369,12 @@ class seasonTeamTravelDistanceCalculator():
             df_long['gameDate'] = pd.to_datetime(df_long['gameDate'])
             #df_long = df_long.sort_values(['teamId', 'gameDate'])
 
+            # remove covid bubble games since there was no travel
+            df_long = df_long[
+                (df_long['gameDate'] < self.covid_bubble_start) |
+                (df_long['gameDate'] > self.covid_bubble_end)
+            ]
+
             # add travel distances, road streaks, days rest, trip distances,
             # back-to-backs, and return flights.
             df_long = df_long.sort_values(['teamId', 'gameDate'])
@@ -320,12 +420,51 @@ class seasonTeamTravelDistanceCalculator():
             # season long cumulative miles
             df_long['cum_miles_season'] = df_long.groupby('teamId')['distance_miles'].cumsum()
 
+            ################## add first game after all-star break flag ##################
+            # get the end date for the asb from each season
+            asb_end_dates = {season: v['end'] for season, v in self.all_star_breaks.items()}
+            # convert to series - season = index
+            asb_cutoffs = pd.Series(asb_end_dates).apply(pd.to_datetime)
+            # add the date to the dataframe
+            df_long['asb_end_date'] = df_long['seasonYear'].map(asb_cutoffs)
+            # temp dataframe to find the first game after asb for each team/season
+            df_filtered = df_long[df_long['gameDate'] > df_long['asb_end_date']]
+            result = (
+                df_filtered.sort_values('gameDate')
+                .groupby(['team', 'seasonYear'], as_index=False)
+                .first()[['team', 'seasonYear', 'gameDate']]
+            )
+            # merge temp dataframe to create a new column that marks the teams first game back from the asb
+            df_long = df_long.merge(
+                result,
+                on=['team', 'seasonYear', 'gameDate'],
+                how='left',
+                indicator='first_game_after_asb'
+            )
+            df_long['first_game_after_asb'] = df_long['first_game_after_asb'] == 'both'
+            ################################################################################
+
+
             # Road streak counter - increments from 1+ on consecutive road games
             # resets to zero after home game
+            """
             df_long['road_trip_streak'] = (
                 df_long.groupby('teamId')['home']
                 .apply(lambda x: (~x).cumsum() - (~x).cumsum().where(x).ffill().fillna(0).astype(int))
                 .reset_index(drop=True)
+            )
+            """
+            df_long['road_trip_streak'] = (
+                df_long.groupby(['teamId', 'seasonYear'], group_keys=False)
+                .apply(
+                    lambda g: (
+                        (~g['home'] & ~g['first_game_after_asb']).cumsum()
+                        - (~g['home'] & ~g['first_game_after_asb']).cumsum()
+                        .where(g['home'] | g['first_game_after_asb'])
+                        .ffill().fillna(0).astype(int)
+                    ),
+                    include_groups=False  # <-- key to silencing the warning
+                )
             )
 
             # distance column used to calculate the cumulative miles per each road trip

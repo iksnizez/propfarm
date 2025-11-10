@@ -379,7 +379,7 @@ class scraper():
         for i in games:
             gid = i['id']
             #dt  = pd.to_datetime(i['date']).date()
-            season = i['season'].int()
+            season = i['season'] *1
             game_type = i['seasonType']
             week = i['week']
 
@@ -404,8 +404,8 @@ class scraper():
             total = odds['overUnder']
             homeSpread = odds['pointSpread']['home']['close']['line'].replace('+','')
             awaySpread = odds['pointSpread']['away']['close']['line'].replace('+','')
-            homeSpreadOdds = odds['pointSpread']['home']['close']['odds']
-            awaySpreadOdds = odds['pointSpread']['away']['close']['odds']
+            homeSpreadOdds = odds['pointSpread']['home']['close']['odds'].replace('EVEN','100') *1
+            awaySpreadOdds = odds['pointSpread']['away']['close']['odds'].replace('EVEN','100') *1
             homeMoneyline = odds['home']['moneyLine']
             awayMoneyline = odds['away']['moneyLine']
 

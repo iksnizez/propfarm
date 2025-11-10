@@ -15,7 +15,10 @@ else:
 
 import pandas as pd
 import numpy as np
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
+
+import re
+
 
 # -------------------------------------------------------------------------------
 # Functions for database connections
@@ -42,6 +45,179 @@ def update_pbp_database():
 def update_player_boxscores():
     pass
 
+def refresh_id_table():
+    '''
+    this pulls the most recent ID lookup table from nfl-data-py and overwrites my db table
+    '''
+    from nba_api.stats.endpoints import commonallplayers
+
+    players = commonallplayers.CommonAllPlayers(is_only_current_season=0)
+    id_table = players.get_data_frames()[0]
+    
+    engine = connect_to_database(database_creds = config.PYMYSQL_NBA)
+    with engine.connect() as conn:
+        id_table.to_sql(
+        name = 'player_nbaapi', 
+        con=conn, 
+        if_exists='replace',
+        index=False          
+    ) 
+    print('player_nbaapi table updated with active players...')
+    return
+
+def add_new_players_to_db(refresh_ext_player_table = False, season= 2026):
+    """
+    TODO THIS IS A COMPLETE MESS BUT WORKS. NEED TO OPTIMIZE WHEN NOT TIRED 
+
+    This will add players to my player table when they are either missing their 
+    nba or actnet ids
+    """
+    
+    missing_players = {
+        'nbaId':{
+            'missing':None,
+            'df':None
+        },
+        'actnetId':{
+            'missing':None,
+            'df':None
+        },
+        'hooprId':{
+            'missing':None,
+            'df':None
+        }
+    }
+
+    #refreshes the id lookup table from nba_api (NBA dot come data)
+    if refresh_ext_player_table:
+        refresh_id_table()
+
+    # get the list of players from my database so i can check if the missing players are missing
+    # from my database or just missing the outlet id
+    engine = connect_to_database(database_creds = config.PYMYSQL_NBA)
+    with engine.connect() as conn:
+        # my main players data base with multiple player ids
+        dfplayer = pd.read_sql(
+            sql = "SELECT * FROM players;",
+            con = conn
+        )
+        old = dfplayer.copy()
+
+        # data from the nba_api library (nba dot com)
+        missing_players['nbaId']['df'] = pd.read_sql(
+            sql = """
+            SELECT 
+                PERSON_ID AS nbaId,
+                DISPLAY_FIRST_LAST AS player
+            FROM player_nbaapi 
+            WHERE ROSTERSTATUS = 1;
+            """,
+            con = conn
+        )
+
+        # act net player ids where my props come from
+        missing_players['actnetId']['df'] = pd.read_sql(
+            sql = """
+            SELECT playerId as actnetId, player 
+            FROM actnetplayers;""",
+            con = conn
+        )
+
+        # hoopr player IDs 
+        missing_players['hooprId']['df'] = pd.read_sql(
+            sql = f"""
+            SELECT 
+                DISTINCT athlete_display_name AS player, 
+                athlete_id AS hooprId 
+            FROM playerbox 
+            WHERE season = {season};""",
+            con = conn
+        )
+
+    # formatting imported data and prepping maps and list
+    dfplayer['joinName']  = dfplayer['player'].str.lower().apply(apply_regex_replacements)
+    players_in_db = list(dfplayer['joinName'])
+
+    none_missing = True
+    all_missing = []
+    for k, v in missing_players.items():
+        temp = v['df'].copy()
+        temp['joinName']  = temp['player'].str.lower().apply(apply_regex_replacements)
+        
+        # list of all the players in the table that needs to be added to palyers
+        player_list =  list(temp['joinName'])
+        
+        # players that are not in the players table and need to be added
+        players_to_add = np.setdiff1d(player_list, players_in_db)
+
+        if len(players_to_add) > 0:
+            none_missing = False
+            all_missing.extend(players_to_add)
+
+    all_missing = list(set(all_missing))
+    dfAllMissing = pd.DataFrame({'joinName':all_missing})
+
+    for k, v in missing_players.items():
+        temp = v['df'].copy()
+        temp['joinName']  = temp['player'].str.lower().apply(apply_regex_replacements)
+        
+        # list of all the players in the table that needs to be added to palyers
+        player_list =  list(temp['joinName'])
+        
+        # players that are not in the players table and need to be added
+        players_to_add = np.setdiff1d(player_list, players_in_db)
+
+        if len(players_to_add) > 0:
+            temp = temp[temp['joinName'].isin(players_to_add)]
+
+            dfAllMissing = pd.merge(
+                left = dfAllMissing,
+                right = temp,
+                on ='joinName',
+                how='left'
+            )
+
+    # if there is at least 1 missing player
+    if not none_missing:    
+    
+        #dfplayer = pd.concat([dfplayer, dfAllMissing], ignore_index=True, sort=False)
+        #dfplayer.drop(columns=[c for c in ['player_x', 'player_y'] if c in dfplayer], inplace=True)
+        dfAllMissing = dfAllMissing.reindex(columns=dfAllMissing.columns.union(['player_x', 'player_y']), fill_value=None)
+
+        dfAllMissing['player'] = dfAllMissing[['player', 'player_x', 'player_y']].bfill(axis=1).iloc[:, 0]
+        dfAllMissing.drop(columns=[c for c in ['player_x', 'player_y'] if c in dfAllMissing], inplace=True)
+
+        to_int = [
+            'hooprId', 'nbaId', 'actnetId'
+        ]
+        #dfplayer[to_int] = dfplayer[to_int].apply(pd.to_numeric, errors='coerce').astype('Int64')
+        dfAllMissing[to_int] = dfAllMissing[to_int].apply(pd.to_numeric, errors='coerce').astype('Int64')
+        
+        cols = dfAllMissing.columns.tolist()
+        insert_stmt = text(f"""
+            INSERT INTO players ({', '.join(cols)})
+            VALUES ({', '.join([':' + c for c in cols])})
+        """)
+
+        with engine.begin() as conn:
+            conn.execute(insert_stmt, dfAllMissing.to_dict(orient='records'))
+        
+        print(dfAllMissing.shape[0], 'players added to db..')
+        
+
+    return
+
+
+def apply_regex_replacements(value):
+    """
+    used to format names into their most joinable form
+    """
+    # regex replacement mapping used to make more joinable names
+    suffix_replace = config.suffix_replace
+
+    for pattern, replacement in suffix_replace.items():
+        value = re.sub(pattern, replacement, value, flags=re.IGNORECASE)
+    return value
 # -------------------------------------------------------------------------------
 # Functions for help calculating stats for modeling 
 # -------------------------------------------------------------------------------
