@@ -16,7 +16,7 @@ else:
 import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine, text
-
+from nba_api.stats.endpoints import scheduleleaguev2
 import re
 
 
@@ -207,7 +207,6 @@ def add_new_players_to_db(refresh_ext_player_table = False, season= 2026):
 
     return
 
-
 def apply_regex_replacements(value):
     """
     used to format names into their most joinable form
@@ -235,6 +234,62 @@ def calculate_reb_adjustment(opp_reb_pct, league_avg_reb_pct):
 def calculate_opp_adjustment(opp_stat_conceded, league_avg_opp_stat_conceded):
     stats_adj = opp_stat_conceded / league_avg_opp_stat_conceded
     return stats_adj
+
+def elongate_nbaApi_schedule(
+    season_str, 
+    remove_gametypes = ['001', '003', '004', '005', '006']
+):
+    '''
+    grab the season schedule from nba_api
+    season_str = 'YYYY-YY'  2024-25
+    cutoff_date = date or datetime, used to filter schedule up to the date
+
+    gameId keys - first 3 digits
+    001 = preseason
+    002 = regular season
+    003 = all star events
+    004 = playoffs
+    005 = play-in games
+    006 = nba cup finals
+    '''
+    # load schedules
+    sched = scheduleleaguev2.ScheduleLeagueV2(league_id='00', season=season_str)
+    df_games = sched.season_games.get_data_frame()
+
+    #filter out game types if input
+    if remove_gametypes:
+        df_games = df_games[~df_games['gameId'].str.startswith(tuple(remove_gametypes))]
+
+    # select cols
+    cols = [
+        'seasonYear', 'gameId', 'weekNumber',
+        'homeTeam_teamId', 'homeTeam_teamName', 
+        'awayTeam_teamId', 'awayTeam_teamName',
+        'gameDate', 'awayTeamTime', 'homeTeamTime', 'day', 'monthNum', 
+        'arenaName', 'arenaState', 'arenaCity'
+    ]
+    df_games = df_games[cols]
+
+    # reformat that data so each team has a unique record for all of their games
+    home_df = df_games.copy()
+    home_df['teamId'] = home_df['homeTeam_teamId'].astype(int)
+    home_df['team'] = home_df['homeTeam_teamName']
+    home_df['oppId'] = home_df['awayTeam_teamId'].astype(int)
+    home_df['opp'] = home_df['awayTeam_teamName']
+    home_df['home'] = True
+
+    away_df = df_games.copy()
+    away_df['teamId'] = away_df['awayTeam_teamId'].astype(int)
+    away_df['team'] = away_df['awayTeam_teamName']
+    away_df['oppId'] = away_df['homeTeam_teamId'].astype(int)
+    away_df['opp'] = away_df['homeTeam_teamName']
+    away_df['home'] = False
+
+    df_long = pd.concat([home_df, away_df], ignore_index=True).reset_index()
+    df_long['gameDate'] = pd.to_datetime(df_long['gameDate'])
+    df_long = df_long.sort_values(['teamId', 'gameDate'])
+
+    return df_games, df_long
 
 # -------------------------------------------------------------------------------
 # Functions for converting odds and probs 

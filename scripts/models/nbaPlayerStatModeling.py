@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 
 ### # nba_api is not friendly, changed it direct url hit ###
 #from nba_api.stats.endpoints import LeagueDashPlayerStats
-from nba_api.stats.endpoints import ScoreboardV2
+from nba_api.stats.endpoints import ScoreboardV2, commonallplayers, scheduleleaguev2
 
 # models
 #from scipy.stats import poisson, binom, nbinom
@@ -41,13 +41,25 @@ import scripts.functions.NBAhelperfunctions as hf
 
 class playerStatModel():
     
-    def __init__(self, day_offset = 0, season = '2024-25', perMode = 'PerGame', num_simulations= 10000):
+    def __init__(
+            self, 
+            day_offset = 0, 
+            season = '2025-26', 
+            perMode = 'PerGame',
+            nGames = 3,
+            lastNGamesRank = 10,
+            num_simulations= 10000
+    ):
         
         self.day_offset = day_offset
         self.season = season
+        self.s = int('20' + season[5:])
+        self.nGames = nGames,
+        self.lastNGamesRank = lastNGamesRank
         self.perMode = perMode ##['Per100Possessions', 'Totals', 'Per36', 'PerGame'] # only used for nba api hits
         self.game_search_date = datetime.today().strftime('%m/%d/%Y')
-        self.game_search_dt = datetime.today() + timedelta(days=day_offset)
+        self.game_search_dt = pd.to_datetime(datetime.today() + timedelta(days=day_offset))
+        self.cutoff_dt = pd.to_datetime(datetime.today() + timedelta(days=-12))
         self.num_simulations = num_simulations
         
         # NBA API Headers to prevent blocking
@@ -61,20 +73,36 @@ class playerStatModel():
 
         self.pace_gathered = False
 
-        self.nba_team_ids = {
-            'ATL':1610612737, 'BOS':1610612738, 'BKN':1610612751, 'CHA':1610612766,
-            'CHI':1610612741, 'CLE':1610612739, 'DAL':1610612742, 'DEN':1610612743,  
-            'DET':1610612765, 'GSW':1610612744, 'HOU':1610612745, 'IND':1610612754, 
-            'LAC':1610612746, 'LAL':1610612747, 'MIA':1610612748, 'MIL':1610612749,  
-            'MIN':1610612750, 'MEM':1610612763, 'NOP':1610612740, 'NYK':1610612752, 
-            'ORL':1610612753, 'OKC':1610612760, 'PHI':1610612755, 'PHX':1610612756, 
-            'POR':1610612757, 'SAC':1610612758, 'SAS':1610612759, 'TOR':1610612761,  
-            'UTA':1610612762, 'WAS':1610612764
+        self.nba_team_ids = config.map_nbaAbbrv_to_nbaId
+
+        self.data = {
+            'teams_search_date':None,
+            'home_teams_search_date':None,
+            'away_teams_search_date':None,
+            'games_search_date':None,
+            'games_long_search_date':None,
+            'calc_league_avgs':{
+                'pace':None,
+                'oreb':None,
+                'dreb':None,
+                'opp_pts':None,
+                'opp_ast':None,
+                'opp_reb':None
+            },
+            'boxscores_players_all':None,
+            'boxscores_players_search_date_formatted':None,
+            'players_model_input':None,  # dfplayers
+            'bref_pos_estimates':None,
+            'schedule':None,
+            'schedule_long':None,
+            'current_rosters':None
         }
+
+        
 
 #####################################################
 ###### GATHERING DATA
-#####################################################
+#####################################################    
     def get_teams_playing(self,
         url = 'https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json',
         use_api = True    
@@ -213,6 +241,105 @@ class playerStatModel():
         self.pace_gathered = True
         return
 
+    def get_nba_rosters(self, current_season_only = True):
+       
+        if current_season_only:
+            is_only_current_season = 1
+        else:
+            is_only_current_season = 0
+
+       #  pull data from library
+        players = commonallplayers.CommonAllPlayers(
+            is_only_current_season=is_only_current_season
+        )
+        current_rosters = players.get_data_frames()[0]
+        self.data['current_rosters'] = current_rosters.copy()
+        return
+
+    def get_bref_pos_estimates(self):
+        """
+        **** ONLY FUNCTIONAL ON MY DATABASE ATM *****
+        hits the db using the class obj search date param
+        to retrieve basketball ref. position estimates.
+
+        """
+        query_bref = """
+            SELECT 
+            b.player, 
+            b.pos, 
+            CASE
+                WHEN b.team = 'BRK' THEN 'BKN'
+                WHEN b.team = 'CHO' THEN 'CHA'
+                WHEN b.team = 'PHO' THEN 'PHX'
+                ELSE b.team
+            END team,
+            p.actnetId  actnetPlayerId, 
+            p.hooprId  hooprId, 
+            p.nbaId  nbaId
+            FROM brefmisc b 
+            LEFT JOIN players p ON b.joinName = p.joinName 
+            WHERE DATE(b.date) = %s;
+        """
+        engine = hf.connect_to_database()
+
+        # query database for props
+        with engine.connect() as connection:
+            df_pos_est = pd.read_sql(
+                sql=query_bref, 
+                con=connection,  
+                params=(self.game_search_dt.strftime('%Y-%m-%d'),)  
+            )
+
+        # pandas converts integers from mysql to floats for some reason here
+        df_pos_est['actnetPlayerId'] = df_pos_est['actnetPlayerId'].astype('Int64')
+        df_pos_est['hooprId'] = df_pos_est['hooprId'].astype('Int64')
+        df_pos_est['nbaId'] = df_pos_est['nbaId'].astype('Int64')
+
+        df_pos_est = (
+            df_pos_est
+                .drop_duplicates()
+                .reset_index(drop=True)
+        )
+
+        # used to clean up the bref import since they don't remove 
+        # players from old teams during the season
+        if self.data['current_rosters'] is None:
+            self.get_nba_rosters(current_season_only = True)
+        current_rosters = self.data['current_rosters'].copy()
+
+        # process data
+        current_rosters = (
+            current_rosters[
+                current_rosters['ROSTERSTATUS'] == 1
+            ][['PERSON_ID', 'TEAM_ABBREVIATION']]
+            .rename(columns={
+                'PERSON_ID':'nbaId', 
+                'TEAM_ABBREVIATION':'team'
+            })
+        )
+        current_rosters['nbaId'] = current_rosters['nbaId'].astype('Int64')#.apply(lambda x: str(x) if pd.notnull(x) else None)
+
+        # join back to basketball ref dataframe, keeping only 
+        # players from active rosters in the active season
+        df_pos_est = df_pos_est.merge(
+            current_rosters,
+            how = 'right',
+            on = ['team', 'nbaId']
+        )
+
+        df_pos_est = df_pos_est.dropna(subset=['player']).reset_index(drop=True)
+
+        # print out players in the final data multiple times
+        # so a filter can be added in this function for them manually
+        bref_pos_manual_edits = df_pos_est[
+            df_pos_est['player'].duplicated(keep=False)
+        ]
+        if not bref_pos_manual_edits.empty:
+            print(bref_pos_manual_edits)
+
+        self.data['bref_pos_estimates'] = df_pos_est.copy()
+        return
+
     def get_players_playing(self,
         # use format to input perMode (per), season id (sid), and team id (tid)
         url_base_nba_player_stat = 'https://stats.nba.com/stats/leaguedashplayerstats?College=&Conference=&Country=&DateFrom=&DateTo=&Division=&DraftPick=&DraftYear=&GameScope=&GameSegment=&Height=&LastNGames=0&LeagueID=00&Location=&MeasureType=Base&Month=0&OpponentTeamID=0&Outcome=&PORound=0&PaceAdjust=N&PerMode={per}&Period=0&PlayerExperience=&PlayerPosition=&PlusMinus=N&Rank=N&Season={sid}&SeasonSegment=&SeasonType=Regular+Season&ShotClockRange=&StarterBench=&TeamID={tid}&TwoWay=0&VsConference=&VsDivision=&Weight=',
@@ -221,10 +348,13 @@ class playerStatModel():
         pull_players_from_nbaapi = False
     ):
         """
-        using the team ids from get_teams_playing(), aggregate player data stats of interest
-        nba_api LeagueDashPlayerStats seems to have stopped working so the website is being hit directly
+        using the team ids from get_teams_playing(), 
+        aggregate player data stats of interest
+        nba_api LeagueDashPlayerStats seems to have stopped 
+        working so the website is being hit directly
 
-        currently pulling - mins, fga/m (2/3/FT), rebs (o/d/all), ast, to, blk, stl, pts
+        currently pulling - mins, fga/m (2/3/FT), rebs (o/d/all), 
+        ast, to, blk, stl, pts
 
         assigns dataframe with these stats to class object
         return nothing
@@ -324,10 +454,10 @@ class playerStatModel():
             df_players = self.df_player_boxscores[columns_players_keep].copy()
 
             df_players = df_players.groupby(['PLAYER_ID','PLAYER_NAME','TEAM_ID', 'TEAM_ABBREVIATION']).mean().reset_index()
-            df_players.loc[:,'FG_PCT'] = df_players['FGM'] / df_players['FGA']
+            df_players.loc[:,'FG_PCT'] = (df_players['FGM'] / df_players['FGA']).clip(0,1)
             #df_players.loc[:,'FG2_PCT'] = df_players['FG2M'] / df_players['FG2A']            
-            df_players.loc[:,'FG3_PCT'] = df_players['FG3M'] / df_players['FG3A']
-            df_players.loc[:,'FT_PCT'] = df_players['FTM'] / df_players['FTA']
+            df_players.loc[:,'FG3_PCT'] = (df_players['FG3M'] / df_players['FG3A']).clip(0,1)
+            df_players.loc[:,'FT_PCT'] = (df_players['FTM'] / df_players['FTA']).clip(0,1)
         
         # FILTER OUT PLAYERS BELOW MINUTE CUTOFF
         df_players = df_players[df_players['MIN'] >= minute_cutoff]
@@ -410,7 +540,6 @@ class playerStatModel():
         from my database that scrapes from actnet
         """
 
-
         query = """
             SELECT p.hooprId PLAYER_ID, p.player, o.prop, o.line, o.oOdds, o.uOdds  
             FROM odds o
@@ -450,6 +579,186 @@ class playerStatModel():
         )
         self.df_players = self.df_players.fillna(0)
         print(props.shape[0], 'prop bets for', props['PLAYER_ID'].nunique(), 'players...')
+        return
+
+    def get_player_boxscores(self):
+        """
+        THIS ONLY RUNS WITH MY DB ATM
+        nba-api doesn't have a way to pull multiple boxscores at once
+        hoopR can pull full season at once, I use hoopR to populate
+        my database
+
+        pulls in all boxscores for the class object season, up to
+        (exclusive) the class object search date.
+        """
+
+        # -------------- GET RAW BOXSCORES FROM DATABASE -----------------------
+        query_pbox = """
+            SELECT *
+            FROM playerbox 
+            WHERE 
+            DATE(game_date) < %s AND 
+            season = %s AND
+            team_id <= 32;
+        """
+        engine = hf.connect_to_database()
+
+        # query database for props
+        with engine.connect() as connection:
+            df_pbox = pd.read_sql(
+                sql=query_pbox, 
+                con=connection,  
+                params=(
+                    self.game_search_dt.strftime('%Y-%m-%d'), 
+                    self.s
+                )  
+            )
+        df_pbox['game_date'] = pd.to_datetime(df_pbox['game_date'])
+
+        # get most recent date before the search date
+        # that had games played
+        prev_game_dates = (
+            df_pbox['game_date']
+            .sort_values(ascending=False)
+            .unique()
+        )
+        prev_games_date = prev_game_dates[0]
+
+        # -------------- GET SEASON SCHEDULE -----------------------
+        # import season schedule
+        sched, sched_long = hf.elongate_nbaApi_schedule(
+                    season_str = self.season, 
+                    remove_gametypes = ['001', '003', '004', '005', '006']
+                )
+        sched['gameDate'] = pd.to_datetime(sched['gameDate'])
+        sched_long['gameDate'] = pd.to_datetime(sched_long['gameDate'])
+
+        # get the date of the next day of games
+        next_game_dates = sched[
+                sched['gameDate'] > self.game_search_dt
+            ]['gameDate'].sort_values(ascending=True).unique()
+        next_games_date = next_game_dates[0]
+
+        # -------------- PROCESS SCHEDULES FOR B2B -----------------------
+        cols_to_map_sched = ['awayTeam_teamId', 'homeTeam_teamId']
+        cols_to_map_long = ['teamId', 'oppId', 'awayTeam_teamId', 'homeTeam_teamId']
+
+        sched[cols_to_map_sched] = (
+            sched[cols_to_map_sched]
+            .apply(lambda col: col.map(config.map_nbaTid_to_hooprTid).astype('Int64'))
+        )
+
+        sched_long[cols_to_map_long] = (
+            sched_long[cols_to_map_long]
+            .apply(lambda col: col.map(config.map_nbaTid_to_hooprTid).astype('Int64'))
+        )
+        # back-to-backs
+        sched_long = sched_long.sort_values(['teamId', 'gameDate'])
+
+        g = sched_long.groupby('teamId')['gameDate']
+
+        # Previous and next game dates
+        sched_long['prev_game_date'] = g.shift(1)
+        sched_long['next_game_date'] = g.shift(-1)
+
+        # Rest days
+        sched_long['days_rest'] = (sched_long['gameDate'] - sched_long['prev_game_date']).dt.days.sub(1)
+        sched_long['days_rest_next_g'] = (sched_long['next_game_date'] - sched_long['gameDate']).dt.days.sub(1)
+
+        # front end = 1, # back end = 2
+        sched_long['b2b'] = (
+            sched_long['days_rest'].eq(0).astype(int) * 1 +       
+            sched_long['days_rest_next_g'].eq(0).astype(int) * 2  
+        )
+
+        self.data['schedule'] = sched.copy()
+        self.data['schedule_long'] = sched_long.copy()
+
+        df_pbox = df_pbox.merge(
+            sched_long,
+            how = 'left',
+            left_on = ['team_id', 'game_date'],
+            right_on = ['teamId', 'gameDate']
+        )
+        del sched, sched_long
+
+        # yesterday is actually the last date that had at least 1 game
+        yesterday_date_char = prev_games_date.strftime('%Y-%m-%d')
+        # today is the search date
+        today_date_char = self.game_search_dt.strftime('%Y-%m-%d')
+        # tomorrow is actually the next date that has at least 1 game
+        tomorrow_date_char = next_games_date.strftime('%Y-%m-%d')
+
+        # add bref estimates
+        if self.data['bref_pos_estimates'] is None:
+            self.get_bref_pos_estimates()
+        bref_pos_est = self.data['bref_pos_estimates'].copy()
+
+        # merge bref estimates onto box score data
+        df_pbox = df_pbox.merge(
+            bref_pos_est[['pos', 'actnetPlayerId', 'hooprId', 'nbaId']],
+            how = 'left',
+            left_on = 'athlete_id',
+            right_on = 'hooprId'
+        )
+
+        # some additional data cleaning that might be necessary from time to time
+        df_pbox['athlete_position_abbreviation'] = np.where(
+            df_pbox['pos'].isna(),
+            df_pbox['athlete_position_abbreviation'],
+            df_pbox['pos']
+        )
+        df_pbox['athlete_position_abbreviation'] = df_pbox['athlete_position_abbreviation'].replace(
+            {'G':'SG', 'F':'SF'}
+        )
+
+        # updating team abbreviations to hoopr format and getting rosters
+        # if they are not already pulled
+        if self.data['current_rosters'] is None:
+            self.get_nba_rosters(current_season_only = True)
+        player_info = self.data['current_rosters'].copy()
+        # convert NBA abbreviations to hoopr Box score abbreviations
+        player_info['TEAM_ABBREVIATION'] = player_info['TEAM_ABBREVIATION'].replace(
+            config.map_nbaAbbrv_to_hooprAbbrv
+        )
+
+        # players who don't play get missing values. filling with 0 for easier calcs later on
+        cols_fillna_zero = [
+            'minutes', 'field_goals_made', 'field_goals_attempted', 'three_point_field_goals_made', 
+            'three_point_field_goals_attempted', 'free_throws_made', 'free_throws_attempted', 
+            'offensive_rebounds', 'defensive_rebounds', 'rebounds', 'assists', 'steals', 'blocks', 
+            'turnovers', 'fouls', 'plus_minus', 'points'
+        ]
+        df_pbox[cols_fillna_zero] = df_pbox[cols_fillna_zero].fillna(0)
+
+        df_pbox = df_pbox.sort_values(['game_date', 'game_id', 'team_name'])
+
+        # reorder and only keep cols of interest
+        cols_reorder = [
+            'game_id', 'season', 'season_type', 'game_date', 'game_date_time', 
+            'athlete_id', 'athlete_display_name', 'team_id', 'team_name', #'team_location', 'team_short_display_name', 
+            'minutes', 'field_goals_made', 'field_goals_attempted', 'three_point_field_goals_made', 
+            'three_point_field_goals_attempted', 'free_throws_made', 'free_throws_attempted', 
+            'offensive_rebounds', 'defensive_rebounds', 'rebounds', 'assists', 'steals', 'blocks', 
+            'turnovers', 'fouls', 'plus_minus', 'points', 'starter', 'ejected', 'did_not_play', 
+            'active', 'athlete_jersey', 'athlete_short_name', 
+            #'athlete_headshot_href', 
+            'athlete_position_name', 'athlete_position_abbreviation', 
+            #'team_display_name', 'team_uid', 'team_slug', 'team_logo', 
+            'team_abbreviation',  'home_away', 'team_winner', 
+            'team_score', 'opponent_team_id', 'opponent_team_name', #'opponent_team_location', 'opponent_team_display_name', 
+            'opponent_team_abbreviation',# 'opponent_team_logo', 
+             'opponent_team_score', 'reason',  
+            'gameId', 'weekNumber', 'homeTeam_teamId', 'homeTeam_teamName', 'awayTeam_teamId', 'awayTeam_teamName', 
+            'gameDate', 'awayTeamTime', 'homeTeamTime', 'day', 'monthNum', 
+            #'arenaName', 'arenaState', 'arenaCity', 
+            'teamId', 'team', 'oppId', 'opp', 'home', 'prev_game_date', 'next_game_date', 'days_rest', 'days_rest_next_g', 
+            'b2b', 'actnetPlayerId','nbaId', #, 'pos',  'hooprId'
+            'team_color', 'team_alternate_color','opponent_team_color', 'opponent_team_alternate_color'
+        ]
+        df_pbox = df_pbox[cols_reorder]
+
+        self.data['boxscores_players_all'] = df_pbox.copy()
         return
 
 #####################################################
@@ -583,15 +892,15 @@ class playerStatModel():
 
         # actual stat processing
         df.loc[:,'FG2M'] = df['FGM'] - df['FG3M']
-        df.loc[:,'FG2A'] = (df['FGA'] - df['FG3A'])#.clip(.1, 100)
-        df.loc[:,'FG3A'] = (df['FG3A'])#.clip(.1, 100)
-        df.loc[:,'FTA'] = (df['FTA'])#.clip(.1, 100)
-        df.loc[:,'FG2_PCT'] = df['FG2M'] / df['FG2A']
+        df.loc[:,'FG2A'] = (df['FGA'] - df['FG3A']).clip(.01, 1000)
+        df.loc[:,'FG3A'] = (df['FG3A']).clip(.01, 1000)
+        df.loc[:,'FTA'] = (df['FTA']).clip(.01, 1000)
+        df.loc[:,'FG2_PCT'] = (df['FG2M'] / df['FG2A']).clip(0,1)
         df.loc[:,'FGA_FTA'] = df['FG2A'] + df['FG3A'] + df['FTA']
 
-        df.loc[:,'shotshareFG2A'] = df['FG2A'] / df['FGA_FTA']
-        df.loc[:,'shotshareFG3A'] = df['FG3A'] / df['FGA_FTA']
-        df.loc[:,'shotshareFTA'] = df['FTA'] / df['FGA_FTA']
+        df.loc[:,'shotshareFG2A'] = (df['FG2A'] / df['FGA_FTA']).clip(.01, 1000)
+        df.loc[:,'shotshareFG3A'] = (df['FG3A'] / df['FGA_FTA']).clip(.01, 1000)
+        df.loc[:,'shotshareFTA'] = (df['FTA'] / df['FGA_FTA']).clip(.01, 1000)
 
         df.loc[:,'PRA'] = df['PTS'] + df['REB'] + df['AST']
         df.loc[:,'PR'] = df['PTS'] + df['REB']
@@ -687,20 +996,7 @@ class playerStatModel():
         # Allocate FG2A and FG3A based on condition
         #TODO consider trying to model the greater of fg3a vs fg2a first . might not matter
         
-        #fg2a = np.where(df['FG2A'].values[:, None] >= df['FG3A'].values[:, None],
-        #    np.random.binomial(df['modeledFGA_FTA'].values[:, None], df['shotshareFG2A'].values[:, None]),
-        #    np.random.binomial(
-        #        df['modeledFGA_FTA'].values[:, None] - np.random.binomial(df['modeledFGA_FTA'].values[:, None], df['shotshareFG3A'].values[:, None]), 
-        #        df['shotshareFG2A'].values[:, None] / (df['shotshareFG2A'].values[:, None] + df['shotshareFTA'].values[:, None]))
-        #)
-        #fg3a = np.where(df['FG2A'].values[:, None] < df['FG3A'].values[:, None],
-        #    np.random.binomial(df['modeledFGA_FTA'].values[:, None], df['shotshareFG3A'].values[:, None]),
-        #    np.random.binomial(
-        #        df['modeledFGA_FTA'].values[:, None] - np.random.binomial(df['modeledFGA_FTA'].values[:, None], df['shotshareFG2A'].values[:, None]), 
-        #        df['shotshareFG3A'].values[:, None] / (df['shotshareFG3A'].values[:, None] + df['shotshareFTA'].values[:, None]))
-        #)
-
-        fg2a = np.random.binomial(sim_shots, df['shotshareFG2A'].values[:, None], size=sim_shots.shape)      
+        fg2a = np.random.binomial(sim_shots, df['shotshareFG2A'].values[:, None], size=sim_shots.shape) 
 
         #TODO handle when a player takes no fg3a or fta and then remove filter in notebook
         fg3a = np.random.binomial(sim_shots - fg2a, 
@@ -708,7 +1004,6 @@ class playerStatModel():
             size=sim_shots.shape
         )
         fta = np.maximum(df['modeledFGA_FTA'].values[:,None] - fg2a - fg3a, 0)
-
         # Simulate makes using shooting percentages (use np.where to handle zeros safely)
         fg2m = np.random.binomial(fg2a, df['FG2_PCT'].values[:, None], size=fg2a.shape)
         fg3m = np.random.binomial(fg3a, df['FG3_PCT'].values[:, None], size=fg3a.shape)

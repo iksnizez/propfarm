@@ -143,9 +143,14 @@ games.tomorrow <- espn_nba_scoreboard (season = tomorrow.date.char)
 boxscore.player <- boxscore.player %>%
     # FILTER OUT ASG
     filter(!game_date %in%  dates.allstar)  %>%
-    left_join(bref.pos.estimates %>% select(hooprId, pos) %>% rename(athlete_id = hooprId), by = c('athlete_id')) %>% 
-    mutate(athlete_position_abbreviation = case_when(is.na(pos) ~ athlete_position_abbreviation,
-                                                     TRUE ~ pos)) %>%
+    left_join(bref.pos.estimates %>% 
+            select(hooprId, pos) %>% 
+            rename(athlete_id = hooprId), by = c('athlete_id')) %>% 
+    mutate(
+        athlete_position_abbreviation = case_when(
+            is.na(pos) ~ athlete_position_abbreviation,
+            TRUE ~ pos
+            )) %>%
     # change remaining generic positions 
     mutate(
         athlete_position_abbreviation = case_when(

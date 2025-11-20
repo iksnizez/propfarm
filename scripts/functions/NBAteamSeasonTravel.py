@@ -168,13 +168,10 @@ class seasonTeamTravelDistanceCalculator():
             df_long = df_long.sort_values(['teamId', 'gameDate'])
 
             # remove covid bubble games since there was no travel
-            print('filtering covid bubble games...')
-            print(df_long.shape[0])
             df_long = df_long[
                 (df_long['gameDate'] < self.covid_bubble_start) |
                 (df_long['gameDate'] > self.covid_bubble_end)
             ]
-            print(df_long.shape[0])
 
             # add travel distances, road streaks, days rest, trip distances,
             # back-to-backs, and return flights.
@@ -244,8 +241,6 @@ class seasonTeamTravelDistanceCalculator():
             )
             df_long['first_game_after_asb'] = df_long['first_game_after_asb'] == 'both'
             ################################################################################
-
-
             # Road streak counter - increments from 1+ on consecutive road games
             # resets to zero after home game
             """
@@ -273,9 +268,18 @@ class seasonTeamTravelDistanceCalculator():
             # it sets home games distance traveled to zero even when going away to home
             # this away to home zero is used below in the road trip cumsum to reset it
             df_long['road_trip_dist'] = np.where(
-                df_long['road_trip_streak'] == 0,
+                # home games will show 0
+                (df_long['road_trip_streak'] == 0),
                 0,
-                df_long['distance_miles']
+                np.where(
+                    # road trip games where there are consectuve games vs the same team
+                    # at the same stadium. distance miles will show 0 but its still a road trip
+                    # changing distance to 1 mile so the road trip calcs below still work
+                    # instead of resetting on the distance == 0
+                    (df_long['distance_miles'] == 0) & (df_long['road_trip_streak'] > 1),
+                    1,
+                    df_long['distance_miles']
+                )
             )
             # calculates the cumsum for each road trip
             # resets for every new road trip

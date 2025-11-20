@@ -22,7 +22,7 @@ last.date <- dbGetQuery(conn, last.date.query)[[1]]
 #last.date = '2025-10-20' ########### FIRST LOAD OF THE SEASON NEEDS MANUAL DATE BEFORE FIRST GAME
 print(paste("pbp: last loaded date = ", last.date))
 
-df <- hoopR::load_nba_pbp(s) %>% filter(game_date > last.date)
+df <- hoopR::load_nba_pbp(s) %>% filter(game_date > last.date) %>% select(-points_attempted, -short_description)
 print(paste("pbp: loading dates: ", df$game_date %>% unique()))
 DBI::dbWriteTable(conn, name = "pbp", value= data.frame(df), row.names = FALSE, overwrite = FALSE, append = TRUE)
 
